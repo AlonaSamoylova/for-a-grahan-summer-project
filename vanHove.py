@@ -1018,6 +1018,8 @@ def check_folder(path):
 #test
 path = '/home/asamoy/summer_project/TracksData/'
 
+
+
 check_folder(path)
 # CalcMSD(path)
 
