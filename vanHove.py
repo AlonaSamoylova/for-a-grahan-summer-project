@@ -9,6 +9,19 @@ from scipy.ndimage import gaussian_filter1d #to smooth the slope derivative -> c
 import trackpy as tp #for van hove correlation; to compare with custom variant
 from scipy.stats import norm #gaussian fit
 
+import uuid
+
+# Backup original show
+_original_show = plt.show
+
+def autosave_show(*args, **kwargs):
+    filename = f"auto_plot_{uuid.uuid4().hex[:6]}.png"
+    plt.savefig(filename, dpi=300)
+    print(f"[Plot saved as {filename}]")
+    _original_show(*args, **kwargs)
+
+plt.show = autosave_show
+
 
 # new helper functions to find better fit:
 #  the helper function for fitting a single power-law model in log-log space using np.polyfit
