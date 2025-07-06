@@ -1016,7 +1016,8 @@ def check_folder(path):
                 
 
 #test
-path = './'
+path = ''
+
 
 
 
