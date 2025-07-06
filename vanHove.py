@@ -6,7 +6,7 @@ import time  # Import time module for timing analysis, main function takes more 
 from scipy.optimize import curve_fit #for broken power law fit / as a alternative, it basically can replace the whole function written before; and for new gaussian fit
 import seaborn as sns 
 from scipy.ndimage import gaussian_filter1d #to smooth the slope derivative -> can help with 'turning point towards end' problem
-import trackpy as tp #for van hove correlation; to compare with custom variant
+# import trackpy as tp #for van hove correlation; to compare with custom variant
 from scipy.stats import norm #gaussian fit
 
 import uuid
