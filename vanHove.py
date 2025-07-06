@@ -12,15 +12,10 @@ from scipy.stats import norm #gaussian fit
 import uuid
 
 # Backup original show
-_original_show = plt.show
-
-def autosave_show(*args, **kwargs):
-    filename = f"auto_plot_{uuid.uuid4().hex[:6]}.png"
-    plt.savefig(filename, dpi=300)
-    print(f"[Plot saved as {filename}]")
-    _original_show(*args, **kwargs)
-
-plt.show = autosave_show
+for i in plt.get_fignums():
+    fig = plt.figure(i)
+    fig.savefig(f"plot_{i}.png")
+    plt.close(fig)
 
 
 # new helper functions to find better fit:
