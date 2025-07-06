@@ -1016,7 +1016,8 @@ def check_folder(path):
                 
 
 #test
-path = os.path.expanduser("~/scratch/summer_project/TracksData")
+path = '/home/asamoy/summer_project/TracksData/'
+
 check_folder(path)
 # CalcMSD(path)
 
