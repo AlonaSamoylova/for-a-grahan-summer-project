@@ -11,11 +11,11 @@ from scipy.stats import norm #gaussian fit
 
 import uuid
 
-# Backup original show
-for i in plt.get_fignums():
-    fig = plt.figure(i)
-    fig.savefig(f"plot_{i}.png")
-    plt.close(fig)
+# # Backup original show
+# for i in plt.get_fignums():
+#     fig = plt.figure(i)
+#     fig.savefig(f"plot_{i}.png")
+#     plt.close(fig)
 
 
 # new helper functions to find better fit:
@@ -556,7 +556,9 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
     plt.title('Mean MSD over Time')
     plt.xlabel('Time (s)')
     plt.ylabel('MSD')
-    plt.show()
+    # plt.show()
+    plt.savefig(f"1.png", dpi=300)
+    plt.close()
 
     # now, let's calculate ensemble MSD and non-ergodicity
     msd_ensemble_sum = [] #storage
@@ -611,7 +613,9 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
     plt.ylabel('Frequency')
     plt.legend()
     plt.title('Radius of Gyration Distribution')
-    plt.show()
+    # plt.show()
+    plt.savefig(f"2.png", dpi=300)
+    plt.close()
 
     # output gamma
     print('Non-ergodicity parameter (gamma):', gamma)
@@ -746,7 +750,9 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
     plt.ylabel('MSD')
     plt.title('MSD Fit Comparison')
     plt.legend()
-    plt.show()
+    # plt.show()
+    plt.savefig(f"3.png", dpi=300)
+    plt.close()
 
     # to print MSD exponent and magnitude
     print(f"[Single Power Law] α = {slope_single:.3f}, A = {10**intercept_single:.3e}")
@@ -974,7 +980,9 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
 
     plt.tight_layout()
     plt.suptitle("Distributions of Two-Segment Fit Parameters Across Trajectories", y=1.03)
-    plt.show()
+    # plt.show()
+    plt.savefig(f"7.png", dpi=300)
+    plt.close()
 
     return tracks_filtered
 
@@ -1256,7 +1264,9 @@ def univ_log_scaled_van_hove_x(max_lag=1, bins=100, range_max=10.0):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+    # plt.show()
+    plt.savefig(f"8.png", dpi=300)
+    plt.close()
 
     return hist, bin_edges
 
@@ -1323,7 +1333,9 @@ def plot_van_hove(lag=5, bins=100, range_max=1.0, smooth=False, average_lags=3):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+    # plt.show()
+    plt.savefig(f"10.png", dpi=300)
+    plt.close()
 
 
 # modified universal log-scaled van Hove function pooling displacements across lags
@@ -1372,7 +1384,9 @@ def pooled_log_scaled_van_hove_x(max_lag=1, bins=100, range_max=10.0):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+    # plt.show()
+    plt.savefig(f"11.png", dpi=300)
+    plt.close()
 
     return hist, bin_edges
 
@@ -1421,6 +1435,8 @@ def pooled_log_scaled_van_hove_per_lag(lags_to_plot=[15, 30, 46], bins=100, rang
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+    # plt.show()
+    plt.savefig(f"12.png", dpi=300)
+    plt.close()
 
 pooled_log_scaled_van_hove_per_lag()
