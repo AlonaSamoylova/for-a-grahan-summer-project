@@ -1008,7 +1008,7 @@ def check_folder(path):
                 if os.path.exists(file_path):
                     print(f"Reading file: {file_name}")
                     # read and print the first line (for demonstration)
-                    with open(file_path, "r") as file:
+                    with open(file_path, 'r', encoding='latin1') as f:
                         first_line = file.readline().strip()
                         print(f"First line: {first_line}\n")
                 else:
