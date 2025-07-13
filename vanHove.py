@@ -1016,8 +1016,8 @@ def check_folder(path):
                 
 
 #test
-path = "C:\\western\\summer\\test"
-# path = os.getcwd()
+# path = "C:\\western\\summer\\test"
+path = os.getcwd()
 check_folder(path)
 
 # CalcMSD(path)
