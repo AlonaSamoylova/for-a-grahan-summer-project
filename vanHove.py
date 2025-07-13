@@ -850,7 +850,7 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
 
             # check if 2 segment fit applies
             classification = classify_powerlaw_type(alpha1, alpha2)
-            print(f"Track {i+1} classified as {classification} power law. Alpha_1 is:{alpha1:.2f} and Alpha2 is:{alpha2:.2f}")
+            # print(f"Track {i+1} classified as {classification} power law. Alpha_1 is:{alpha1:.2f} and Alpha2 is:{alpha2:.2f}")
 
 
             if classification == 'single':
