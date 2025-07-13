@@ -665,7 +665,7 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
     gamma_df = pd.DataFrame({
         "lag_time_s": lag_times[valid_mask],
         "gamma_v1": gamma[valid_mask],
-        "gamma_v2": gamma_v2[valid_mask]
+        "gamma_v2": gamma_v2
     })
     gamma_df.to_csv("Table 3: gamma_cutoff.csv", index=False)
 
