@@ -663,9 +663,9 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
     plt.savefig("Figure 3: gamma_vs_lagtime.png", dpi=300)
     # save data
     gamma_df = pd.DataFrame({
-        "lag_time_s": lag_times[cutoff_mask],
-        "gamma_v1": gamma[cutoff_mask],
-        "gamma_v2": gamma_v2[cutoff_mask]
+        "lag_time_s": lag_times[valid_mask],
+        "gamma_v1": gamma[valid_mask],
+        "gamma_v2": gamma_v2[valid_mask]
     })
     gamma_df.to_csv("Table 3: gamma_cutoff.csv", index=False)
 
