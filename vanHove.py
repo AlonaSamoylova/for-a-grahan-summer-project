@@ -9,14 +9,6 @@ from scipy.ndimage import gaussian_filter1d #to smooth the slope derivative -> c
 # import trackpy as tp #for van hove correlation; to compare with custom variant
 from scipy.stats import norm #gaussian fit
 
-import uuid
-
-# # Backup original show
-# for i in plt.get_fignums():
-#     fig = plt.figure(i)
-#     fig.savefig(f"plot_{i}.png")
-#     plt.close(fig)
-
 
 # new helper functions to find better fit:
 #  the helper function for fitting a single power-law model in log-log space using np.polyfit
@@ -556,9 +548,11 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
     plt.title('Mean MSD over Time')
     plt.xlabel('Time (s)')
     plt.ylabel('MSD')
+    plt.savefig("Figure 1: mean_msd_loglog.png", dpi=300)
     # plt.show()
-    plt.savefig(f"1.png", dpi=300)
-    plt.close()
+
+    msd_df = pd.DataFrame({"time_s": np.arange(1, len(msd_mean) + 1) * 0.025, "mean_msd": msd_mean })
+    msd_df.to_csv("Table 1: mean_msd_loglog.csv", index=False)
 
     # now, let's calculate ensemble MSD and non-ergodicity
     msd_ensemble_sum = [] #storage
@@ -599,12 +593,23 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
 
 
     gamma = (msd_ensemble_mean - msd_mean) / msd_ensemble_mean
-    print(gamma)
+    # here: the different. /by # data points in msd ; include both
+    # make a plot of it =>how gamma changes with lag time (small)
+    # print(gamma)
+
+    # ver2 from paper mmc9:
+    # corresponds to eq. 3 :
+    relative_diff = (msd_ensemble_mean - msd_mean) / msd_ensemble_mean
+    gamma_v2 = np.nanmean(relative_diff)
+    # print(gamma_v2)
+    
+    # plot to visualize gamma vs lag time (use time axis matching msd) - later in code after lag times are defined
 
     # to calculate Rg
     Rg_all = np.array([calc_Rg(track[:, :2]) for track in tracks_filtered]) #for each track
     Rg_seg = [calc_Rg_seg(track[:, :2], seg_size) for track in tracks_filtered] #fro segmented tracks
 
+    # save date instead of plotting => save csvs 
     # plotting Rg distributions
     plt.figure()
     plt.hist(Rg_all, bins=50, alpha=0.5, label='Overall Rg')
@@ -613,14 +618,56 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
     plt.ylabel('Frequency')
     plt.legend()
     plt.title('Radius of Gyration Distribution')
+    plt.savefig("Figure 2: Rg.png", dpi=300)
     # plt.show()
-    plt.savefig(f"2.png", dpi=300)
-    plt.close()
+
+    # flatten segmented Rg array just in case it's a list of arrays
+    Rg_seg_flat = np.hstack(Rg_seg)
+
+    # save Rg distributions to separate CSV files
+    pd.DataFrame({"Rg": Rg_all}).to_csv("Table 2: Rg_all.csv", index=False)
+    pd.DataFrame({"Rg": Rg_seg_flat}).to_csv("Table 2_1: Rg_segmented.csv", index=False)
+
 
     # output gamma
     print('Non-ergodicity parameter (gamma):', gamma)
+    print('Non-ergodicity parameter (gamma-paper version):', gamma_v2)
 
     print(f"Total processing time: {time.time() - start_time:.2f} seconds.")
+    
+    # plot for gamma
+
+    # to ensure all gamma values align and filter out invalid (NaN) values
+    lag_times = np.arange(1, len(msd_ensemble_mean) + 1) * 0.025
+
+    # mask valid points (non-NaN in both versions)
+    valid_mask = (~np.isnan(gamma)) & (~np.isnan(gamma_v2)) & (~np.isnan(lag_times))
+
+    # # Def. mask for <= 1s
+    # cutoff_mask = valid_mask <= 1.0
+
+    # final plot
+    plt.figure()
+    plt.plot(lag_times[valid_mask], gamma[valid_mask], label='γ - v1: Rel. Diff')
+    
+    # scalar paper gamma_v2 as horizontal line:
+    plt.axhline(gamma_v2, linestyle='--', color='gray', label=f'γ - v3: Mean Rel. Diff (={gamma_v2:.3f})')  # scalar
+    plt.xlabel('Time lag (s)')
+    plt.ylabel('γ (Non-ergodicity parameter)')
+    plt.title('γ vs Lag Time')
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.legend()
+    # plt.show()
+    plt.savefig("Figure 3: gamma_vs_lagtime.png", dpi=300)
+    # save data
+    gamma_df = pd.DataFrame({
+        "lag_time_s": lag_times[cutoff_mask],
+        "gamma_v1": gamma[cutoff_mask],
+        "gamma_v2": gamma_v2[cutoff_mask]
+    })
+    gamma_df.to_csv("Table 3: gamma_cutoff.csv", index=False)
 
     # testing differents fits, for now: only two new functions \(single break point)
 
@@ -658,107 +705,60 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
     slope_single, intercept_single = single_powerlaw_fit(msd_valid)
     msd_fit_single = 10**intercept_single * (time_valid ** slope_single)
 
-    #two step
-    # (slope1, slope2), c1, c2 = MSD_exp_twostep(msd_valid, turning_pt) if interceptswill be later added , but matlab file doesn't have it like this
-    # (slope1, intercept1), (slope2, intercept2) = MSD_exp_twostep(msd_valid, turning_pt)
+
     log_time = np.log10(time_valid)
-    # # intercept1 = c1[1]
-    # # intercept2 = c2[1]
-
-    msd_fit_twostep = np.empty_like(msd_valid)
-    # msd_fit_twostep[:turning_pt] = 10**(slope1 * log_time[:turning_pt])
-    # msd_fit_twostep[turning_pt:] = 10**(slope2 * log_time[turning_pt:])
-    (slope1, intercept1), (slope2, intercept2) = MSD_exp_twostep(msd_valid, turning_pt)
-    fit1 = slope1 * log_time[:turning_pt] + intercept1
-    fit2 = slope2 * log_time[turning_pt:] + intercept2
-    msd_fit_twostep[:turning_pt] = 10**fit1
-    msd_fit_twostep[turning_pt:] = 10**fit2
-
-
-    # broken power-law fit
-    (slope1, slope2), turn = broken_powerlaw_fit(msd_valid)
-    msd_fit_broken = np.empty_like(msd_valid, dtype=float)
-    log_time = np.log10(time_valid)
-    log_msd = np.log10(msd_valid) #for 3 steo
-
-    # fitting segments
-    fit1 = slope1 * log_time[:turn] + (np.log10(msd_valid[:turn]).mean() - slope1 * log_time[:turn].mean())
-    fit2 = slope2 * log_time[turn:] + (np.log10(msd_valid[turn:]).mean() - slope2 * log_time[turn:].mean())
-
-    # combining
-    msd_fit_broken[:turn] = 10**fit1
-    msd_fit_broken[turn:] = 10**fit2
-
-
-    # 3 step
-    (s1, s2, s3), (b1, b2) = broken_powerlaw_fit_3step(msd_valid)
-    msd_fit_broken_3 = np.empty_like(msd_valid)
-
-    msd_fit_broken_3[:b1] = 10 ** (s1 * log_time[:b1] + (log_msd[:b1].mean() - s1 * log_time[:b1].mean()))
-    msd_fit_broken_3[b1:b2] = 10 ** (s2 * log_time[b1:b2] + (log_msd[b1:b2].mean() - s2 * log_time[b1:b2].mean()))
-    msd_fit_broken_3[b2:] = 10 ** (s3 * log_time[b2:] + (log_msd[b2:].mean() - s3 * log_time[b2:].mean()))
-
-    # bkn_pow
-
-    #  Initial guess: slightly off from truth
-    guess_alphas = [0.22, 1.11, 1.17] #from 3 step - graph, which suggests three segments: subdiffusive → nearly diffusive → slightly superdiffusive -> helpful to select bonds
-    N = len(time_valid)
-    # guess_breaks = [15, 50]  #just random # ex.
-    guess_breaks = [int(N * 0.3), int(N * 0.7)] #def. dynamically   !important
-
-
-    # guess_A = msd_valid[0]  # or just 1e-2
-    guess_A = np.mean(msd_valid[:3])
-
-    initial_guess = [guess_A] + guess_alphas + guess_breaks
-
     
-    # initial_guess = guess_alphas + guess_breaks
 
-    # Bounds: enforce breaks in increasing order and alphas positive
-    # lower_bounds = [0.01] * 3 + [5, 30] #random ref.
-    # upper_bounds = [2.0] * 3 + [40, 90]
+    # new 2 segment fit:
+    # --- 2-segment continuous fit using bkn_pow_2seg ---
+    break1 = find_turning_point(msd_valid)  # automatic turning point
+    A_guess = np.mean(msd_valid[:5])
+    initial_guess = [A_guess, 0.3, 1.0]
+    bounds_2seg = ([1e-5, 0.1, 0.1], [10, 3.0, 3.0])
 
-    bounds = (
-    [1e-5, 0.1, 0.1, 0.1, int(N*0.2), int(N*0.5)],
-    [1.0, 3.0, 3.0, 3.0,  int(N*0.5), int(N*0.9)],
-    ) #!important, very sensitive
+    def fit_wrapper(x, A, alpha1, alpha2):
+        return bkn_pow_2seg(x, A, alpha1, alpha2, break1)[0]
 
-    
-    # print("Initial guess length:", len(initial_guess))
-    # print("Expected: 1 A +", len(guess_alphas), "alphas +", len(guess_breaks), "breaks")
-    # print("time_valid shape:", time_valid.shape)
-    # print("msd_valid shape:", msd_valid.shape)
+    popt_2seg, _ = curve_fit(fit_wrapper, time_valid, msd_valid, p0=initial_guess, bounds=bounds_2seg)
+    msd_fit_2seg, A2_2seg = bkn_pow_2seg(time_valid, *popt_2seg, break1)
 
 
-    # fit using curve_fit
-    popt, _ = curve_fit(bkn_pow, time_valid, msd_valid, p0=initial_guess, bounds=bounds) # bounds=(lower_bounds, upper_bounds)
-    msd_fit = bkn_pow(time_valid, *popt)# evaluating fit
 
 
     # plotting original MSD with fits
     plt.figure()
+    plt.plot(time_valid * 0.025, msd_fit_2seg, '--', label=f'2-Seg Fit (α₁ ≈ {popt_2seg[1]:.2f}, α₂ ≈ {popt_2seg[2]:.2f})')
+
     plt.plot(time_valid * 0.025, msd_valid, label='Original MSD', color='black')
     plt.plot(time_valid * 0.025, msd_fit_single, '--', label=f'Single Power Law (α ≈ {slope_single:.2f})')
-    plt.plot(time_valid * 0.025, msd_fit_twostep, '--', label=f'Two-Step Power Law (α₁ ≈ {slope1:.2f}, α₂ ≈ {slope2:.2f})')
-    plt.plot(time_valid * 0.025, msd_fit_broken, '--', label=f'Broken Power Law (α₁ ≈ {slope1:.2f}, α₂ ≈ {slope2:.2f})')
-    plt.plot(time_valid * 0.025, msd_fit_broken_3, '--', label=f'Three-Segment Power Law\n(α₁ ≈ {s1:.2f}, α₂ ≈ {s2:.2f}, α₃ ≈ {s3:.2f})')
-    plt.plot(time_valid * 0.025, msd_fit, '--', label=f'Improved fit Three-Segment Power Law\n(α₁ ≈ {popt[0]:.2f}, α₂ ≈ {popt[1]:.2f}, α₃ ≈ {popt[2]:.2f})')
+    plt.plot(time_valid * 0.025, msd_fit_2seg, '--', label=f'2-Seg Fit (α₁ ≈ {popt_2seg[1]:.2f}, α₂ ≈ {popt_2seg[2]:.2f})')
+
     plt.xscale('log')
     plt.yscale('log')
     plt.xlabel('Time (s)')
     plt.ylabel('MSD')
     plt.title('MSD Fit Comparison')
     plt.legend()
+    plt.savefig("Figure4: msd_fit_comparison.png", dpi=300)
     # plt.show()
-    plt.savefig(f"3.png", dpi=300)
-    plt.close()
 
     # to print MSD exponent and magnitude
     print(f"[Single Power Law] α = {slope_single:.3f}, A = {10**intercept_single:.3e}")
-    print(f"[Two-Step] α₁ = {slope1:.3f}, A₁ = {10**intercept1:.3e}, α₂ = {slope2:.3f}, A₂ = {10**intercept2:.3e}")
-    print(f"[Three-Step] α₁ = {s1:.3f}, α₂ = {s2:.3f}, α₃ = {s3:.3f}")  # intercepts optional here
-    print(f"[Scipy Fit] α₁ = {popt[1]:.3f}, α₂ = {popt[2]:.3f}, α₃ = {popt[3]:.3f}, A = {popt[0]:.3e}")
+    print(f"[2-Seg Continuous Fit] α₁ = {popt_2seg[1]:.3f}, A₁ = {popt_2seg[0]:.3e}, α₂ = {popt_2seg[2]:.3f}, A₂ = {A2_2seg:.3e}, Break = {break1}")
+
+
+    # to create DataFrame with all relevant curves
+    fit_df = pd.DataFrame({
+        "time_s": time_valid * 0.025,
+        "msd_original": msd_valid,
+        "msd_fit_single": msd_fit_single,
+        "msd_fit_2seg": msd_fit_2seg
+    })
+
+    # save to CSV
+    fit_df.to_csv("Table 4: msd_fits_comparison.csv", index=False)
+
+
 
     
     #segments, now using msd avg. (mean) - filtered
@@ -789,7 +789,12 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
     A2_double = []
     turning_pts_double = []
 
-    for i, msd in enumerate(msd_sum[:70]): #random 5 trajectories, ->change to see more
+    # to save:
+    # creating a list to store each track's DataFrame
+    all_fit_data = []
+
+    # for i, msd in enumerate(msd_sum[:70]): #random 5 trajectories, ->change to see more
+    for i, msd in enumerate(msd_sum): #!!!!!!!!!!!! ONLY FOR GRAHAM, pls don't try to run at your own computer/laptop
         msd_trimmed_unfiltered = msd[:max_frames]
         # Filter valid indices
         valid_mask = ~np.isnan(msd_trimmed_unfiltered) & ~np.isinf(msd_trimmed_unfiltered)
@@ -804,50 +809,6 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
         # Optional: skip short or empty tracks
         if len(msd_valid) < 10:
             raise ValueError("Not enough valid data points.")
-
-
-
-        # # 2-Segment
-        # try:
-        #     turning_pt = 20  # adjust as needed
-        #     t = np.arange(1, len(msd_trimmed) + 1)  # fixes x-axis mismatch
-
-        #     # getting log values to join 2 segments
-        #     log_time = np.log10(t)
-        #     log_msd = np.log10(msd_trimmed)
-
-        #     # optional: to avoid some exceptions, i noticed that x array is often empty because of /0 division
-        #     # # Safe segment selection
-        #     if turning_pt <= 3 or turning_pt >= len(msd_temp) - 3:
-        #         raise ValueError("Turning point too close to start or end. Adjust turning_pt.")
-
-        #     # Clean log10 transformation
-        #     time_pt = np.arange(1, len(msd_temp) + 1)
-        #     msd_temp = np.array(msd_temp)
-
-        #     # Filter out non-positive MSD values
-        #     valid = (msd_temp > 0)
-        #     time_pt_log = np.log10(time_pt[valid])
-        #     msd_temp_log = np.log10(msd_temp[valid])
-
-        #     # Check again
-        #     if len(time_pt_log) < turning_pt or turning_pt >= len(msd_temp_log):
-        #         raise ValueError("Not enough valid data before or after turning point.")
-
-        #     # fitting both segments
-        #     (slope1, intercept1), (slope2, intercept2) = MSD_exp_twostep(msd_trimmed, turning_pt)
-
-        #     # full curve with joined line (piecewise model)
-        #     msd_fit_twoseg = np.empty_like(msd_trimmed)
-        #     msd_fit_twoseg[:turning_pt] = 10 ** (slope1 * log_time[:turning_pt] + intercept1)
-        #     msd_fit_twoseg[turning_pt:] = 10 ** (slope2 * log_time[turning_pt:] + intercept2)
-
-        #     # # plotting
-        #     plt.plot(t, msd_trimmed, label="Original MSD", color="black")
-        #     plt.plot(t, msd_fit_twoseg, '--', label=f"Two-Step Fit (α₁ ≈ {slope1:.2f}, α₂ ≈ {slope2:.2f})")
-
-        # except Exception as e:
-        #     print(f"Skipping 2-seg fit for Track {i+1}: {e}")
 
         
 
@@ -923,6 +884,17 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
 
                 print(f'Tract #{i+1} MSD. Turning point is: {break1}')
 
+                # to store data in a single dataframe
+                df = pd.DataFrame({
+                    "track": i + 1,
+                    "frame": t,
+                    "time_s": t * 0.025,
+                    "msd": msd_trimmed,
+                    "fit_2seg": msd_fit_2seg
+                })
+                all_fit_data.append(df)
+
+
         except Exception as e:
             print(f"Skipping 2-seg fit for Track {i+1}: {e}")
 
@@ -945,7 +917,27 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
         # plt.tight_layout()
         # plt.show()
 
+        # concatenate all dataframes and save as a single file
+    if all_fit_data:
+        full_df = pd.concat(all_fit_data, ignore_index=True)
+        full_df.to_csv("Table 5: all_tracks_msd_fits.csv", index=False)
+    else:
+        print("No valid fit data to save.")
+
     print (f"There are {single} single tracks and {double} double tracks")
+
+
+    # to save histogram data
+    df_hist = pd.DataFrame({
+        "alpha1": alpha1_double,
+        "alpha2": alpha2_double,
+        "A1": A1_double,
+        "A2": A2_double,
+        "turning_point": turning_pts_double
+    })
+
+    df_hist.to_csv("Table 6: two_segment_fit_histogram_data.csv", index=False)
+
 
     # to plot histograms
     fig, axs = plt.subplots(2, 3, figsize=(18, 10))
@@ -980,9 +972,9 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
 
     plt.tight_layout()
     plt.suptitle("Distributions of Two-Segment Fit Parameters Across Trajectories", y=1.03)
+    # Save figure to file
+    fig.savefig("Figure 6: two_segment_fit_histograms.png", dpi=300, bbox_inches='tight')
     # plt.show()
-    plt.savefig(f"7.png", dpi=300)
-    plt.close()
 
     return tracks_filtered
 
@@ -1025,14 +1017,8 @@ def check_folder(path):
 
 #test
 path = os.getcwd()
-
-
-
-
-
-
-
 check_folder(path)
+
 # CalcMSD(path)
 
 # gausssian fit
@@ -1264,9 +1250,7 @@ def univ_log_scaled_van_hove_x(max_lag=1, bins=100, range_max=10.0):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    # plt.show()
-    plt.savefig(f"8.png", dpi=300)
-    plt.close()
+    plt.show()
 
     return hist, bin_edges
 
@@ -1315,7 +1299,7 @@ def plot_van_hove(lag=5, bins=100, range_max=1.0, smooth=False, average_lags=3):
 
     df_tracks = convert_tracks_to_df(trajectories)
     pos_x = df_tracks.set_index(['frame', 'particle'])['x'].unstack()
-    vh_tp = tp.motion.vanhove(pos_x, lag, bins=bins, mpp=1.0)
+    # vh_tp = tp.motion.vanhove(pos_x, lag, bins=bins, mpp=1.0)
 
     # snoothing
     if smooth:
@@ -1333,9 +1317,7 @@ def plot_van_hove(lag=5, bins=100, range_max=1.0, smooth=False, average_lags=3):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    # plt.show()
-    plt.savefig(f"10.png", dpi=300)
-    plt.close()
+    plt.show()
 
 
 # modified universal log-scaled van Hove function pooling displacements across lags
@@ -1384,9 +1366,7 @@ def pooled_log_scaled_van_hove_x(max_lag=1, bins=100, range_max=10.0):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    # plt.show()
-    plt.savefig(f"11.png", dpi=300)
-    plt.close()
+    plt.show()
 
     return hist, bin_edges
 
@@ -1396,6 +1376,8 @@ def pooled_log_scaled_van_hove_per_lag(lags_to_plot=[15, 30, 46], bins=100, rang
     tracks = CalcMSD(path)
     bin_edges = np.linspace(-range_max, range_max, bins + 1)
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+    
+    all_data = []  # collect for CSV
 
     plt.figure(figsize=(8, 5))
 
@@ -1429,14 +1411,26 @@ def pooled_log_scaled_van_hove_per_lag(lags_to_plot=[15, 30, 46], bins=100, rang
         plt.plot(bin_centers, hist, label=f"Δt = {lag}")
         plt.plot(bin_centers, gauss_curve, '--', label=f"Fit Δt = {lag}, σ={sigma:.2f}")
 
+        # to save each point to all_data
+        for x_val, h_val, g_val in zip(bin_centers, hist, gauss_curve):
+            all_data.append({
+                "lag_time": lag,
+                "bin_center": x_val,
+                "P(Δx)": h_val,
+                "gaussian_fit": g_val
+            })
+
     plt.xlabel("Scaled Δx")
     plt.ylabel("P(Δx)")
     plt.title("Van Hove (per lag) with Log-Scaling plotted together with Gaussian fits")
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
+    plt.savefig("Figure 7: vanhove_scaled_fits.png", dpi=300)
     # plt.show()
-    plt.savefig(f"12.png", dpi=300)
-    plt.close()
+    # save data as CSV
+    df = pd.DataFrame(all_data)
+    df.to_csv("Table 7: vanhove_scaled_fits_data.csv", index=False)
 
+# try change y-axis to log scale (instead of linear) - highlight differences
 pooled_log_scaled_van_hove_per_lag()
