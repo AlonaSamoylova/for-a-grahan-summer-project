@@ -458,7 +458,7 @@ def MSD_exp_twostep(msd_temp, turning_pt):
 # main function;
 # to process and analyze track data
 
-def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min length -> 100, 200, van hoff corelation function
+def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge min length -> 100, 200, van hoff corelation function
     """
     Process trajectory data and calculate MSD, non-ergodicity, and Rg.
 
