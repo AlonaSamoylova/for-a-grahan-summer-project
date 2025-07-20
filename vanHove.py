@@ -9,7 +9,7 @@ from scipy.ndimage import gaussian_filter1d #to smooth the slope derivative -> c
 # import trackpy as tp #for van hove correlation; to compare with custom variant
 from scipy.stats import norm #gaussian fit
 
-
+global_start = time.time()
 # new helper functions to find better fit:
 #  the helper function for fitting a single power-law model in log-log space using np.polyfit
 
@@ -1485,3 +1485,5 @@ plot_and_save_gamma_rg_results(gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensembl
 # double
 gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask = compute_gamma_rg_from_group(double_trajs, time_step=0.025, seg_size=10)
 plot_and_save_gamma_rg_results(gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask, prefix = "double", N = 17)
+
+print(f"Total time: {time.time() - global_start:.2f}s")
