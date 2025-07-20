@@ -1073,6 +1073,70 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     df_double = pd.DataFrame(double_rows)
     df_double.to_csv("Table 9_double_powerlaw_fits.csv", index=False)
 
+    # entire_single/double traj:
+    # single
+    max_len = max(map(len, single_group))
+    msd_mat = np.full((len(single_group), max_len), np.nan)
+    for i, msd in enumerate(single_group):
+        msd_mat[i, :len(msd)] = msd
+    mean_msd = np.nanmean(msd_mat, axis=0)
+    t = np.arange(1, len(mean_msd) + 1)
+
+    slope, intercept = single_powerlaw_fit(mean_msd)
+    fit_single = 10**intercept * (t ** slope)
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(t * 0.025, mean_msd, 'k-', lw=2, label="Mean MSD (Single)")
+    plt.plot(t * 0.025, fit_single, '--b', lw=2, label=f"Fit α ≈ {slope:.2f}")
+    plt.xscale("log"), plt.yscale("log")
+    plt.xlabel("Time (s)"); plt.ylabel("MSD")
+    plt.title("Single‑Power‑Law Group")
+    plt.legend(); plt.grid(True); plt.tight_layout()
+    # plt.show()
+    plt.savefig("Figure 10: Mean MSD (single).png", dpi=300)
+
+    df = pd.DataFrame({
+        "time_s": t * 0.025,
+        "msd_mean": mean_msd,
+        "msd_fit": fit_single
+    })
+    df.to_csv("Table 10_avg_single_group.csv", index=False)
+
+    # double
+    max_len = max(map(len, double_group))
+    msd_mat = np.full((len(double_group), max_len), np.nan)
+    for i, msd in enumerate(double_group):
+        msd_mat[i, :len(msd)] = msd
+    mean_msd = np.nanmean(msd_mat, axis=0)
+    t = np.arange(1, len(mean_msd) + 1)
+
+    break1 = find_turning_point(mean_msd)
+    A_guess = np.mean(mean_msd[:5])
+    bounds = ([1e-5, 0.1, 0.1], [10, 3.0, 3.0])
+    popt, _ = curve_fit(
+        lambda x, A, a1, a2: bkn_pow_2seg(x, A, a1, a2, break1)[0],
+        t, mean_msd, p0=[A_guess, 0.3, 1.0], bounds=bounds
+    )
+    fit_double, _ = bkn_pow_2seg(t, *popt, break1)
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(t * 0.025, mean_msd, 'k-', lw=2, label="Mean MSD (Double)")
+    plt.plot(t * 0.025, fit_double, '--r', lw=2, label=f"Fit α₁ ≈ {popt[1]:.2f}, α₂ ≈ {popt[2]:.2f}")
+    plt.xscale("log"), plt.yscale("log")
+    plt.xlabel("Time (s)"); plt.ylabel("MSD")
+    plt.title("Two‑Segment Power‑Law Group")
+    plt.legend(); plt.grid(True); plt.tight_layout()
+    plt.savefig("Figure 11: Mean MSD (double).png", dpi=300)
+    # plt.show()
+
+    df = pd.DataFrame({
+        "time_s": t * 0.025,
+        "msd_mean": mean_msd,
+        "msd_fit": fit_double
+    })
+    df.to_csv("Table 11_avg_double_group.csv", index=False)
+
+
 
 
     return tracks_filtered
