@@ -1383,7 +1383,7 @@ def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
     msd_matrix = np.full((len(group_tracks), max_length), np.nan)
     for i, traj in enumerate(group_tracks):
         msd = calc_msd_2D_ensemble_longtrack(traj[:, :2], timewave, time_ratio)
-        if msd is not None:
+        if msd is not None  and len(msd_ensemble_temp) > 1 and not np.isnan(msd_ensemble_temp).all():
             msd_matrix[i, :len(msd)] = msd
 
     msd_mean = np.nanmean(msd_matrix, axis=0)
