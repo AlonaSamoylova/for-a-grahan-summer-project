@@ -179,7 +179,7 @@ def find_turning_point(msd_curve, min_idx=3):
     
     # Restrict to middle 60% of indices => as it's always towards end -> can be more effective than above for noicier regions
     start = int(0.2 * len(slope_change))
-    end = int(0.6 * len(slope_change)) #appears that 50% (-30%) filtered towards the end workeed better
+    end = int(0.5 * len(slope_change)) #appears that 50% (-30%) filtered towards the end workeed better
 
     # Find maximum slope change within this window
     restricted_change = slope_change[start:end]
@@ -688,9 +688,9 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
     msd_clean = msd_mean[valid]
 
     # # Then apply 1s cutoff AFTER cleaning
-    # cutoff_mask = (t_clean * 0.025 <= 1.0)  # apply seconds-based filter
-    # time_valid = t_clean[cutoff_mask]
-    # msd_valid = msd_clean[cutoff_mask]
+    cutoff_mask = (t_clean * 0.025 <= 1.0)  # apply seconds-based filter
+    time_valid = t_clean[cutoff_mask]
+    msd_valid = msd_clean[cutoff_mask]
 
     #
     # # we're interedsted in everything <= 1s: not were effective as well as if loops, let's edit valid instead
