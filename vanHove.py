@@ -1470,6 +1470,13 @@ def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
 
     debug_df.to_csv(f"Table _debug_gamma.csv", index=False)
 
+    # matrix shape
+    print("Matrix shapes:", msd_matrix.shape, ensemble_matrix.shape)
+    print("Row 0:", msd_matrix[0, :10])
+    print("Row 1:", msd_matrix[1, :10])
+    print("Row 2:", ensemble_matrix[2, :10])
+
+
 
     return gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask
 
