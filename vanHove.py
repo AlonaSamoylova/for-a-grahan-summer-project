@@ -895,9 +895,9 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
                 all_fit_data.append(df)
 
 
-        except Exception as e:
-            # print(f"Skipping 2-seg fit for Track {i+1}: {e}")
-            continue
+        # except Exception as e:
+        #     # print(f"Skipping 2-seg fit for Track {i+1}: {e}")
+        #     continue
 
         # # Plot trajectory ; coomented for now to save time debugging van Hove
         # plt.plot(t, msd_trimmed, label=f"Track {i+1}")
