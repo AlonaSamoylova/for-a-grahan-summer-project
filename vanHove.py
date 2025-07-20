@@ -793,6 +793,11 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     # creating a list to store each track's DataFrame
     all_fit_data = []
 
+    # to plot all singlr/double traj separately:
+    single_group = []
+    double_group = []
+
+
     # for i, msd in enumerate(msd_sum[:70]): #random 5 trajectories, ->change to see more
     for i, msd in enumerate(msd_sum): #!!!!!!!!!!!! ONLY FOR GRAHAM, pls don't try to run at your own computer/laptop
         msd_trimmed_unfiltered = msd[:max_frames]
@@ -856,6 +861,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
             if classification == 'single':
                     # Single power-law fit
                 single += 1
+                single_group.append(msd_trimmed) #To separate storage
                 # # try:
                 #     slope, intercept = single_powerlaw_fit(msd_trimmed)
                 #     msd_fit_single = 10**intercept * (t ** slope)
@@ -870,6 +876,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
             else:
                 
                 double +=1
+                double_group.append(msd_trimmed) #to separate storage
 
                 # add to new storage
                 alpha1_double.append(alpha1)
@@ -978,6 +985,96 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     fig.savefig("Figure 6: two_segment_fit_histograms.png", dpi=300, bbox_inches='tight')
     # plt.show()
 
+
+    # plotting single msds
+    single_rows = []
+    plt.figure(figsize=(8, 5))
+    for traj_id, msd in enumerate(single_group):
+        t = np.arange(1, len(msd) + 1)
+        try:
+            slope, intercept = single_powerlaw_fit(msd)
+            fit = 10**intercept * (t ** slope)
+
+            # plot
+            plt.plot(t * 0.025, msd, color='gray', alpha=0.3)
+            plt.plot(t * 0.025, fit, '--', color='blue', alpha=0.4)
+
+            # to save to storage
+            for i in range(len(msd)):
+                single_rows.append({
+                    "trajectory_id": traj_id,
+                    "time_s": t[i] * 0.025,
+                    "msd_original": msd[i],
+                    "msd_fit_single": fit[i]
+                })
+
+        except Exception:
+            continue
+
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xlabel("Time (s)")
+    plt.ylabel("MSD")
+    plt.title("Single Power-Law–Like Trajectories (Fitted)")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("Figure 8_Single Power-Law–Like Trajectories.png", dpi=300)
+    # plt.show()
+
+    # to save single group to CSV
+    df_single = pd.DataFrame(single_rows)
+    df_single.to_csv("Table 8_single_powerlaw_fits.csv", index=False)
+
+    # double
+    double_rows = []
+
+    plt.figure(figsize=(8, 5))
+    for traj_id, msd in enumerate(double_group):
+        t = np.arange(1, len(msd) + 1)
+        try:
+            break1 = find_turning_point(msd)
+            A_guess = np.mean(msd[:5])
+            initial_guess = [A_guess, 0.3, 1.0]
+            bounds = ([1e-5, 0.1, 0.1], [10, 3.0, 3.0])
+
+            def fit_wrapper(x, A, alpha1, alpha2):
+                return bkn_pow_2seg(x, A, alpha1, alpha2, break1)[0]
+
+            popt, _ = curve_fit(fit_wrapper, t, msd, p0=initial_guess, bounds=bounds)
+            fit, _ = bkn_pow_2seg(t, *popt, break1)
+
+            # plot
+            plt.plot(t * 0.025, msd, color='gray', alpha=0.3)
+            plt.plot(t * 0.025, fit, '--', color='red', alpha=0.4)
+
+            # to save to storage
+            for i in range(len(msd)):
+                double_rows.append({
+                    "trajectory_id": traj_id,
+                    "time_s": t[i] * 0.025,
+                    "msd_original": msd[i],
+                    "msd_fit_2seg": fit[i]
+                })
+
+        except Exception:
+            continue
+
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xlabel("Time (s)")
+    plt.ylabel("MSD")
+    plt.title("Two-Segment Power-Law–Like Trajectories (Fitted)")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("Figure 9: Two-Segment Power-Law–Like Trajectories.png", dpi=300)
+    # plt.show()
+
+    # to save double group to CSV
+    df_double = pd.DataFrame(double_rows)
+    df_double.to_csv("Table 9_double_powerlaw_fits.csv", index=False)
+
+
+
     return tracks_filtered
 
 
@@ -1072,307 +1169,6 @@ def convert_tracks_to_df(tracks):
 
 # van hove for x, custom
 
-
-def van_hove_self_x(tracks, max_lag=50, bins=100, range_max=10.0):
-    """
-    Computes the self-part of the Van Hove correlation function along x only.
-
-    Parameters:
-        tracks (list of arrays): Each element is a 2D array (T x 2) of trajectory coordinates (x, y).
-        max_lag (int): Max lag time (Δt) to compute displacements for.
-        bins (int): Number of bins for the histogram.
-        range_max (float): Maximum displacement (Δx) included in histogram.
-
-    Returns:
-        vh_x (ndarray): 2D array (max_lag x bins) of P(Δx, Δt).
-        bin_edges (ndarray): Bin edges used for the histograms.
-    """
-    # def. histogram bin edges from -range_max to +range_max
-    bin_edges = np.linspace(-range_max, range_max, bins + 1)
-    
-    # init. output matrix: each row corresponds to a lag time
-    vh_x = np.zeros((max_lag, bins))
-    # scale each trcaks
-    # loop over all trajectories
-    for traj in tracks:
-        # loop over lag times from 1 to max_lag
-        for lag in range(1, max_lag + 1):
-            dx_list = []  # Store Δx values for this lag
-
-            # loop over valid time indices
-            for i in range(len(traj) - lag):
-                dx = traj[i + lag, 0] - traj[i, 0]  # Δx
-                dx_list.append(dx)
-
-            # histogram of Δx at this lag
-            hist, _ = np.histogram(dx_list, bins=bin_edges, density=True)
-            # instead of density, use raw number-> keeptrack of how many segments=> acumalate raw histogram/ 'total # segments
-            vh_x[lag - 1] += hist
-
-    # normalize: divide by number of tracks
-    vh_x /= len(tracks)
-
-    return vh_x, bin_edges
-
-
-def enhanced_van_hove_self_x(tracks, max_lag=50, bins=100, range_max=10.0):
-    """
-    Computes the self-part of the Van Hove correlation function (only x-component).
-    Adds detailed shape and NaN/static checks to justify its filtering strength.
-
-    Parameters:
-        tracks (list of arrays): Each element is a 2D array of shape (T x 2) representing a trajectory.
-        max_lag (int): Maximum lag time Δt to compute.
-        bins (int): Number of histogram bins.
-        range_max (float): Range for displacement histogram.
-
-    Returns:
-        vh (array): Van Hove matrix (lag time x histogram bin).
-        bin_edges (array): Bin edges for histogram.
-        summary (dict): Statistics on how many trajectories were skipped and why.
-    """
-    # histogram bins
-    bin_edges = np.linspace(-range_max, range_max, bins + 1)
-    vh = np.zeros((max_lag, bins))
-
-
-    # counters for diagnostics
-    total = 0
-    short = 0
-    nan = 0
-    static = 0
-    used = 0
-
-    for traj in tracks:
-        total += 1
-
-        if traj.shape[0] < 2:
-            short += 1
-            continue
-
-        x = traj[:, 0]
-        if np.isnan(x).all():
-            nan += 1
-            continue
-
-        if np.allclose(x, x[0]):
-            static += 1
-            continue
-
-        used += 1
-
-
-        for lag in range(1, max_lag + 1):
-            displacements = [x[i + lag] - x[i] for i in range(len(x) - lag)]
-
-            #scaling factor ξ = exp(mean(log|dx|))
-            safe_log_disps = [np.log(abs(dx)) for dx in displacements if dx != 0]
-            if not safe_log_disps:
-                continue
-            xi = np.exp(np.mean(safe_log_disps))
-
-            # to scale displacements
-            scaled_dx = [dx / xi for dx in displacements]
-
-            # histogram the scaled displacements
-            hist, _ = np.histogram(scaled_dx, bins=bin_edges, density=True)
-            vh[lag - 1] += hist
-            # avg across differnt pulls, not abevg across lag times; pick few discrete lag times 
-
-        # Normalize by the number of usable trajectories
-    if used > 0:
-        vh /= used
-
-    summary = {
-        "total": total,
-        "used": used,
-        "short_skipped": short,
-        "nan_skipped": nan,
-        "static_skipped": static
-    }
-    # decided not to return summary to easier unpack it later
-
-    # printed instead
-    print(f"Custom van Hove filtering summary: Out of {total} tracks, {used} were used. "
-          f"There were {short} short_skipped, {nan} nan_skipped, and {static} static_skipped tracks")
-    
-    return vh, bin_edges
-
-
-def univ_log_scaled_van_hove_x(max_lag=1, bins=100, range_max=10.0):
-    """
-    Aggregates all scaled displacements across trajectories and lags into a single Van Hove distribution.
-    Scaling per (trajectory, lag) using ξ = exp(mean(log(|dx|))) per the thesis method.
-
-    Returns:
-        hist: Final normalized histogram of scaled displacements.
-        bin_edges: Histogram bin edges.
-    """
-
-    # getting individual tracks
-    tracks= CalcMSD(path)
-    all_scaled_displacements = []
-
-    for traj in tracks:
-        if traj.shape[0] < 2:
-            continue
-        x = traj[:, 0]
-        if np.isnan(x).all() or np.allclose(x, x[0]):
-            continue
-
-        for lag in range(1, max_lag + 1): #remove this, choose 1 lag  time
-            displacements = x[lag:] - x[:-lag]
-            if len(displacements) == 0:
-                continue #integrate the hist. within traj but not within lag times/ 
-
-            safe_log = np.log(np.abs(displacements[displacements != 0]))
-            if len(safe_log) == 0:
-                continue
-
-            xi = np.exp(np.mean(safe_log))
-            scaled_dx = displacements / xi
-            all_scaled_displacements.extend(scaled_dx)
-
-    # histogram of all scaled displacements
-    bin_edges = np.linspace(-range_max, range_max, bins + 1)
-    hist, _ = np.histogram(all_scaled_displacements, bins=bin_edges, density=True)
-    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-
-    # gaussian fit
-    mu, sigma = norm.fit(bin_centers, floc=0)
-    gauss = norm.pdf(bin_centers, mu, sigma)
-
-    # plot
-    plt.figure(figsize=(8, 5))
-    plt.plot(bin_centers, hist, label="Scaled Van Hove", lw=2)
-    plt.plot(bin_centers, gauss, '--', label=f"Gaussian Fit\nμ={mu:.3f}, σ={sigma:.3f}")
-    plt.xlabel("Scaled Δx")
-    plt.ylabel("P(Δx)")
-    plt.title("Universal Van Hove with Log-Scaling (Global Scalling factor)")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
-    return hist, bin_edges
-
-# # to plot van hove custom function for a selected lag time
-
-def plot_van_hove(lag=5, bins=100, range_max=1.0, smooth=False, average_lags=3):
-    """
-    Plots the Van Hove self-part function for a specific lag time.
-
-    Parameters:
-        lag (int): Lag time to plot (1-indexed)
-        bins (int): Number of bins for histogram
-        range_max (float): Max Δx value for binning (histogram width)
-        smooth (bool): If True, apply Gaussian smoothing to the curves
-        average_lags (int): Number of early lag times to average in the custom function
-    """
-    # getting individual tracks
-    trajectories = CalcMSD(path)
-
-    # custom Van Hove (Δx only)
-    vh_custom, bin_edges_custom = enhanced_van_hove_self_x(trajectories, max_lag=max(lag, average_lags), bins=bins, range_max=range_max)
-
-    #to calculate bin centers from edges; 
-    centers_custom = 0.5 * (bin_edges_custom[:-1] + bin_edges_custom[1:])
-    
-    #averaging=> to solve weird artifact around center 
-    if average_lags > 1:
-        custom_curve = np.mean(vh_custom[:average_lags], axis=0)
-        label_custom = f"Custom Van Hove (Δt=1–{average_lags} avg)"
-    else:
-        custom_curve = vh_custom[lag - 1]
-        label_custom = f"Custom Van Hove (Δt={lag})"
-
-    # gaussian fit
-    # mu, sigma = norm.fit(centers_custom, floc=0)
-    # gauss = norm.pdf(centers_custom, mu, sigma)
-
-    vh, bin_edges = enhanced_van_hove_self_x(...)
-    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-    hist_at_lag3 = vh_custom[lag - 1]  
-
-    params = gauss_fit(bin_centers, hist_at_lag3)
-    fit_curve = gauss(bin_centers, *params)
-
-
-
-    df_tracks = convert_tracks_to_df(trajectories)
-    pos_x = df_tracks.set_index(['frame', 'particle'])['x'].unstack()
-    # vh_tp = tp.motion.vanhove(pos_x, lag, bins=bins, mpp=1.0)
-
-    # snoothing
-    if smooth:
-        custom_curve = gaussian_filter1d(custom_curve, sigma=1.0)
-        vh_tp = gaussian_filter1d(vh_tp, sigma=1.0)
-
-    plt.figure(figsize=(8, 5))
-    # plt.plot(centers_custom, custom_curve, label=label_custom, lw=2)
-    # plt.plot(centers_custom, gauss, '--', label=f"Gaussian Fit\nμ={mu:.3f}, σ={sigma:.3f}")
-    plt.plot(bin_centers, hist_at_lag3, label="Van Hove Δt=3")
-    plt.plot(bin_centers, fit_curve, '--', label="Gaussian Fit") #not working
-    plt.xlabel("Δx")
-    plt.ylabel("P(Δx, Δt)")
-    plt.title("Comparison of Van Hove Self-Part Function")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
-
-# modified universal log-scaled van Hove function pooling displacements across lags
-def pooled_log_scaled_van_hove_x(max_lag=1, bins=100, range_max=10.0):
-    tracks = CalcMSD(path)
-    all_scaled_displacements = []
-
-    for traj in tracks:
-        if traj.shape[0] < 2:
-            continue
-        x = traj[:, 0]  # x-component
-        if np.isnan(x).all() or np.allclose(x, x[0]):
-            continue
-
-        for lag in range(1, max_lag + 1):
-            displacements = x[lag:] - x[:-lag]
-            if len(displacements) == 0:
-                continue
-
-            safe_log = np.log(np.abs(displacements[displacements != 0]))
-            if len(safe_log) == 0:
-                continue
-
-            xi = np.exp(np.mean(safe_log))
-            scaled_dx = displacements / xi
-            all_scaled_displacements.extend(scaled_dx)
-
-    # histogram of all scaled displacements
-    bin_edges = np.linspace(-range_max, range_max, bins + 1)
-    hist, _ = np.histogram(all_scaled_displacements, bins=bin_edges, density=True)
-    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
-
-    # paussian fit
-    # new
-    H, A, mu, sigma = gauss_fit(bin_centers, hist)
-    gaussian_curve = gauss(bin_centers, H, A, mu, sigma)
-
-
-    # Plot
-    plt.figure(figsize=(8, 5))
-    plt.plot(bin_centers, hist, label="Scaled Van Hove", lw=2)
-    plt.plot(bin_centers, gaussian_curve, '--', label=f'Gaussian Fit\nμ={mu:.2f}, σ={sigma:.2f}')
-    plt.xlabel("Scaled Δx")
-    plt.ylabel("P(Δx)")
-    plt.title("Universal Van Hove with Log-Scaling (Pooled Displacements)")
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
-    return hist, bin_edges
-
-# pooled_log_scaled_van_hove_x()
 
 def pooled_log_scaled_van_hove_per_lag(lags_to_plot=[15, 30, 46], bins=100, range_max=10.0):
     tracks = CalcMSD(path)
