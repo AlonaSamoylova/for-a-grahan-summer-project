@@ -796,6 +796,9 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     # to plot all singlr/double traj separately:
     single_group = []
     double_group = []
+    # return storages for van hove
+    single_trajs = []
+    double_trajs = []
 
 
     # for i, msd in enumerate(msd_sum[:70]): #random 5 trajectories, ->change to see more
@@ -862,6 +865,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
                     # Single power-law fit
                 single += 1
                 single_group.append(msd_trimmed) #To separate storage
+                single_trajs.append(tracks_filtered[i][:, :2])  # keep full x, y trajectory
                 # # try:
                 #     slope, intercept = single_powerlaw_fit(msd_trimmed)
                 #     msd_fit_single = 10**intercept * (t ** slope)
@@ -877,6 +881,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
                 
                 double +=1
                 double_group.append(msd_trimmed) #to separate storage
+                double_trajs.append(tracks_filtered[i][:, :2])
 
                 # add to new storage
                 alpha1_double.append(alpha1)
@@ -1139,7 +1144,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
 
 
-    return tracks_filtered
+    return tracks_filtered, single_trajs, double_trajs
 
 
 # to ensure the path exists (and has needed file type)
@@ -1232,10 +1237,10 @@ def convert_tracks_to_df(tracks):
 
 
 # van hove for x, custom
+tracks_filtered, single_trajs, double_trajs = CalcMSD(path)
 
-
-def pooled_log_scaled_van_hove_per_lag(lags_to_plot=[15, 30, 46], bins=100, range_max=10.0):
-    tracks = CalcMSD(path)
+def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[15, 30, 46], bins=100, range_max=10.0):
+    # tracks = CalcMSD(path)
     bin_edges = np.linspace(-range_max, range_max, bins + 1)
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
     
@@ -1295,4 +1300,6 @@ def pooled_log_scaled_van_hove_per_lag(lags_to_plot=[15, 30, 46], bins=100, rang
     df.to_csv("Table 7: vanhove_scaled_fits_data.csv", index=False)
 
 # try change y-axis to log scale (instead of linear) - highlight differences
-pooled_log_scaled_van_hove_per_lag()
+pooled_log_scaled_van_hove_per_lag(tracks_filtered)
+pooled_log_scaled_van_hove_per_lag(single_trajs)
+pooled_log_scaled_van_hove_per_lag(double_trajs)
