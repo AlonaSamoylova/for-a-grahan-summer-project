@@ -687,10 +687,10 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
     t_clean = t[valid]
     msd_clean = msd_mean[valid]
 
-    # Then apply 1s cutoff AFTER cleaning
-    cutoff_mask = (t_clean * 0.025 <= 1.0)  # apply seconds-based filter
-    time_valid = t_clean[cutoff_mask]
-    msd_valid = msd_clean[cutoff_mask]
+    # # Then apply 1s cutoff AFTER cleaning
+    # cutoff_mask = (t_clean * 0.025 <= 1.0)  # apply seconds-based filter
+    # time_valid = t_clean[cutoff_mask]
+    # msd_valid = msd_clean[cutoff_mask]
 
     #
     # # we're interedsted in everything <= 1s: not were effective as well as if loops, let's edit valid instead
@@ -702,36 +702,36 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
     turning_pt = 30 #for msd two-step (fixed), that's why broken power law with automatic one is better
 
     # single power-law fit
-    slope_single, intercept_single = single_powerlaw_fit(msd_valid)
-    msd_fit_single = 10**intercept_single * (time_valid ** slope_single)
+    slope_single, intercept_single = single_powerlaw_fit(msd_clean)
+    msd_fit_single = 10**intercept_single * (t_clean ** slope_single)
 
 
-    log_time = np.log10(time_valid)
+    log_time = np.log10(t_clean)
     
 
     # new 2 segment fit:
     # --- 2-segment continuous fit using bkn_pow_2seg ---
-    break1 = find_turning_point(msd_valid)  # automatic turning point
-    A_guess = np.mean(msd_valid[:5])
+    break1 = find_turning_point(msd_clean)  # automatic turning point
+    A_guess = np.mean(msd_clean[:5])
     initial_guess = [A_guess, 0.3, 1.0]
     bounds_2seg = ([1e-5, 0.1, 0.1], [10, 3.0, 3.0])
 
     def fit_wrapper(x, A, alpha1, alpha2):
         return bkn_pow_2seg(x, A, alpha1, alpha2, break1)[0]
 
-    popt_2seg, _ = curve_fit(fit_wrapper, time_valid, msd_valid, p0=initial_guess, bounds=bounds_2seg)
-    msd_fit_2seg, A2_2seg = bkn_pow_2seg(time_valid, *popt_2seg, break1)
+    popt_2seg, _ = curve_fit(fit_wrapper, t_clean, msd_clean, p0=initial_guess, bounds=bounds_2seg)
+    msd_fit_2seg, A2_2seg = bkn_pow_2seg(t_clean, *popt_2seg, break1)
 
 
 
 
     # plotting original MSD with fits
     plt.figure()
-    plt.plot(time_valid * 0.025, msd_fit_2seg, '--', label=f'2-Seg Fit (α₁ ≈ {popt_2seg[1]:.2f}, α₂ ≈ {popt_2seg[2]:.2f})')
+    plt.plot(t_clean * 0.025, msd_fit_2seg, '--', label=f'2-Seg Fit (α₁ ≈ {popt_2seg[1]:.2f}, α₂ ≈ {popt_2seg[2]:.2f})')
 
-    plt.plot(time_valid * 0.025, msd_valid, label='Original MSD', color='black')
-    plt.plot(time_valid * 0.025, msd_fit_single, '--', label=f'Single Power Law (α ≈ {slope_single:.2f})')
-    plt.plot(time_valid * 0.025, msd_fit_2seg, '--', label=f'2-Seg Fit (α₁ ≈ {popt_2seg[1]:.2f}, α₂ ≈ {popt_2seg[2]:.2f})')
+    plt.plot(t_clean * 0.025, msd_clean, label='Original MSD', color='black')
+    plt.plot(t_clean * 0.025, msd_fit_single, '--', label=f'Single Power Law (α ≈ {slope_single:.2f})')
+    plt.plot(t_clean * 0.025, msd_fit_2seg, '--', label=f'2-Seg Fit (α₁ ≈ {popt_2seg[1]:.2f}, α₂ ≈ {popt_2seg[2]:.2f})')
 
     plt.xscale('log')
     plt.yscale('log')
@@ -749,8 +749,8 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
 
     # to create DataFrame with all relevant curves
     fit_df = pd.DataFrame({
-        "time_s": time_valid * 0.025,
-        "msd_original": msd_valid,
+        "time_s": time_clean * 0.025,
+        "msd_original": msd_clean,
         "msd_fit_single": msd_fit_single,
         "msd_fit_2seg": msd_fit_2seg
     })
@@ -807,7 +807,7 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
         msd_trimmed = msd_trimmed_unfiltered[valid_mask]
 
         # Optional: skip short or empty tracks
-        if len(msd_valid) < 10:
+        if len(msd_clean) < 10:
             raise ValueError("Not enough valid data points.")
 
         
@@ -904,7 +904,7 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
 
         # # ! move this to/from the loop for indvidual/group plot
         # # Plot the average
-        # plt.plot(time_valid, msd_valid, 'k--', linewidth=2, label="Average MSD (valid)")
+        # plt.plot(time_clean, msd_clean, 'k--', linewidth=2, label="Average MSD (valid)")
         
 
         # # Log-log and labels
