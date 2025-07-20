@@ -1459,6 +1459,18 @@ def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
     print("Lengths of first few tracks:", [len(tr) for tr in tracks_filtered[:5]])
 
 
+    # to save gamma numerator and denominator for debugging
+    debug_df = pd.DataFrame({
+        "lag_time_s": lag_times,
+        "msd_mean": msd_mean,
+        "msd_ensemble": msd_ensemble_mean,
+        "abs_diff": np.abs(msd_mean - msd_ensemble_mean),
+        "gamma": gamma
+    })
+
+    debug_df.to_csv(f"Table_debug_gamma.csv", index=False)
+
+
     return gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask
 
 
