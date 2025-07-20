@@ -749,7 +749,7 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
 
     # to create DataFrame with all relevant curves
     fit_df = pd.DataFrame({
-        "time_s": time_clean * 0.025,
+        "time_s": t_clean * 0.025,
         "msd_original": msd_clean,
         "msd_fit_single": msd_fit_single,
         "msd_fit_2seg": msd_fit_2seg
@@ -904,7 +904,7 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
 
         # # ! move this to/from the loop for indvidual/group plot
         # # Plot the average
-        # plt.plot(time_clean, msd_clean, 'k--', linewidth=2, label="Average MSD (valid)")
+        # plt.plot(t_clean, msd_clean, 'k--', linewidth=2, label="Average MSD (valid)")
         
 
         # # Log-log and labels
