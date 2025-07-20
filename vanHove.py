@@ -1143,6 +1143,10 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
 
 
+    
+
+
+
 
     return tracks_filtered, single_trajs, double_trajs
 
@@ -1293,13 +1297,53 @@ def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[15, 30, 46], bins=1
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig("Figure 7: vanhove_scaled_fits.png", dpi=300)
+    # plt.savefig("Figure 7: vanhove_scaled_fits.png", dpi=300)
     # plt.show()
     # save data as CSV
+    # df = pd.DataFrame(all_data)
+    # df.to_csv("Table 7: vanhove_scaled_fits_data.csv", index=False)
+
+    return all_data
+
+# to save all plots instead of 1 by 1
+
+def save_van_hove_results(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
+    """
+    Save van Hove results from pooled_log_scaled_van_hove_per_lag to CSV and figure.
+    Input:
+        all_data – list of dicts returned from pooled_log_scaled_van_hove_per_lag()
+    """
+    if not all_data:
+        print("No data to save.")
+        return
+
+    # converting to DataFrame
     df = pd.DataFrame(all_data)
-    df.to_csv("Table 7: vanhove_scaled_fits_data.csv", index=False)
+    df.to_csv(csv_filename, index=False)
+
+    # plot
+    plt.figure(figsize=(8, 5))
+    for lag in sorted(df["lag_time"].unique()):
+        sub = df[df["lag_time"] == lag]
+        plt.plot(sub["bin_center"], sub["P(Δx)"], label=f"Δt = {lag}")
+        plt.plot(sub["bin_center"], sub["gaussian_fit"], '--', label=f"Fit Δt = {lag}, σ≈{sub['gaussian_fit'].std():.2f}")
+
+    plt.xlabel("Scaled Δx")
+    plt.ylabel("P(Δx)")
+    plt.title("Van Hove (log-scaled) with Gaussian fits")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(fig_filename, dpi=300)
+    plt.close()
 
 # try change y-axis to log scale (instead of linear) - highlight differences
-pooled_log_scaled_van_hove_per_lag(tracks_filtered)
-pooled_log_scaled_van_hove_per_lag(single_trajs)
-pooled_log_scaled_van_hove_per_lag(double_trajs)
+
+# overall
+data = pooled_log_scaled_van_hove_per_lag(tracks_filtered)
+save_van_hove_results(data, csv_filename="Table 7: vanhove_scaled_fits_data.csv", fig_filename="Figure 7: vanhove_scaled_fits.png")
+
+data_single = pooled_log_scaled_van_hove_per_lag(single_trajs)
+save_van_hove_results(data_single, csv_filename="Table 12: vanhove_scaled_fits_data_single.csv", fig_filename="Figure 12: vanhove_scaled_fits_single.png")
+data_double = pooled_log_scaled_van_hove_per_lag(double_trajs)
+save_van_hove_results(data_double, csv_filename="Table 13: vanhove_scaled_fits_data_double.csv", fig_filename="Figure 12: vanhove_scaled_fits_double.png")
