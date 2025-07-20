@@ -1468,7 +1468,7 @@ def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
         "gamma": gamma
     })
 
-    debug_df.to_csv(f"Table_debug_gamma.csv", index=False)
+    debug_df.to_csv(f"Table _debug_gamma.csv", index=False)
 
 
     return gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask
