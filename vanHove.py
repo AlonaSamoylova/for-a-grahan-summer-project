@@ -1243,7 +1243,7 @@ def convert_tracks_to_df(tracks):
 # van hove for x, custom
 tracks_filtered, single_trajs, double_trajs = CalcMSD(path)
 
-def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[15, 30, 46], bins=100, range_max=10.0):
+def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=100, range_max=10.0): #15,30,46
     # tracks = CalcMSD(path)
     bin_edges = np.linspace(-range_max, range_max, bins + 1)
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
@@ -1346,4 +1346,4 @@ save_van_hove_results(data, csv_filename="Table 7: vanhove_scaled_fits_data.csv"
 data_single = pooled_log_scaled_van_hove_per_lag(single_trajs)
 save_van_hove_results(data_single, csv_filename="Table 12: vanhove_scaled_fits_data_single.csv", fig_filename="Figure 12: vanhove_scaled_fits_single.png")
 data_double = pooled_log_scaled_van_hove_per_lag(double_trajs)
-save_van_hove_results(data_double, csv_filename="Table 13: vanhove_scaled_fits_data_double.csv", fig_filename="Figure 12: vanhove_scaled_fits_double.png")
+save_van_hove_results(data_double, csv_filename="Table 13: vanhove_scaled_fits_data_double.csv", fig_filename="Figure 13: vanhove_scaled_fits_double.png")
