@@ -711,7 +711,7 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
 
     # new 2 segment fit:
     # --- 2-segment continuous fit using bkn_pow_2seg ---
-    break1 = find_turning_point(msd_valid)  # automatic turning point
+    break1 = find_turning_point(msd_clean)  # automatic turning point
     A_guess = np.mean(msd_clean[:5])
     initial_guess = [A_guess, 0.3, 1.0]
     bounds_2seg = ([1e-5, 0.1, 0.1], [10, 3.0, 3.0])
