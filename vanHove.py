@@ -743,8 +743,8 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
     # plt.show()
 
     # to print MSD exponent and magnitude
-    print(f"[Single Power Law] α = {slope_single:.3f}, A = {10**intercept_single:.3e}")
-    print(f"[2-Seg Continuous Fit] α₁ = {popt_2seg[1]:.3f}, A₁ = {popt_2seg[0]:.3e}, α₂ = {popt_2seg[2]:.3f}, A₂ = {A2_2seg:.3e}, Break = {break1}")
+    # print(f"[Single Power Law] α = {slope_single:.3f}, A = {10**intercept_single:.3e}")
+    # print(f"[2-Seg Continuous Fit] α₁ = {popt_2seg[1]:.3f}, A₁ = {popt_2seg[0]:.3e}, α₂ = {popt_2seg[2]:.3f}, A₂ = {A2_2seg:.3e}, Break = {break1}")
 
 
     # to create DataFrame with all relevant curves
@@ -882,7 +882,7 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
                 plt.plot(t, msd_fit_2seg, '--', label=f"2-Seg Fit v.2 α₁ ≈ {popt[1]:.2f}, α₂ ≈ {popt[2]:.2f}. Turning point is: {break1}")
                 
 
-                print(f'Tract #{i+1} MSD. Turning point is: {break1}')
+                # print(f'Tract #{i+1} MSD. Turning point is: {break1}')
 
                 # to store data in a single dataframe
                 df = pd.DataFrame({
@@ -896,7 +896,7 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
 
 
         except Exception as e:
-            print(f"Skipping 2-seg fit for Track {i+1}: {e}")
+            # print(f"Skipping 2-seg fit for Track {i+1}: {e}")
 
         # # Plot trajectory ; coomented for now to save time debugging van Hove
         # plt.plot(t, msd_trimmed, label=f"Track {i+1}")
