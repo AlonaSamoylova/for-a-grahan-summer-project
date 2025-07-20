@@ -1347,3 +1347,141 @@ data_single = pooled_log_scaled_van_hove_per_lag(single_trajs)
 save_van_hove_results(data_single, csv_filename="Table 12: vanhove_scaled_fits_data_single.csv", fig_filename="Figure 12: vanhove_scaled_fits_single.png")
 data_double = pooled_log_scaled_van_hove_per_lag(double_trajs)
 save_van_hove_results(data_double, csv_filename="Table 13: vanhove_scaled_fits_data_double.csv", fig_filename="Figure 13: vanhove_scaled_fits_double.png")
+
+
+
+def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
+
+    # mainly copied from loop above
+    # to compute ensemble MSD:
+    max_length = max(traj.shape[0] for traj in group_tracks)
+    timewave = np.arange(max_length)
+    time_ratio = 1
+
+    msd_ensemble_sum = []
+
+    for track in group_tracks:
+        msd_ensemble_temp = calc_msd_2D_ensemble_longtrack(track[:, :2], timewave, time_ratio)
+
+        if (
+            msd_ensemble_temp is not None
+            and len(msd_ensemble_temp) > 1
+            and not np.isnan(msd_ensemble_temp).all()
+        ):
+            msd_ensemble_sum.append(msd_ensemble_temp)
+        else:
+            print("Skipping a track due to invalid or empty MSD.")
+
+    ensemble_matrix = np.full((len(msd_ensemble_sum), max_length), np.nan)
+    for i, msd in enumerate(msd_ensemble_sum):
+        ensemble_matrix[i, :len(msd)] = msd
+
+    msd_ensemble_mean = np.nanmean(ensemble_matrix, axis=0)
+    msd_ensemble_mean[msd_ensemble_mean == 0] = np.nan
+
+    # to compute MSD mean across individual trajectories
+    msd_matrix = np.full((len(group_tracks), max_length), np.nan)
+    for i, traj in enumerate(group_tracks):
+        msd = calc_msd_2D_ensemble_longtrack(traj[:, :2], timewave, time_ratio)
+        if msd is not None:
+            msd_matrix[i, :len(msd)] = msd
+
+    msd_mean = np.nanmean(msd_matrix, axis=0)
+
+    gamma = (msd_ensemble_mean - msd_mean) / msd_ensemble_mean
+    relative_diff = (msd_ensemble_mean - msd_mean) / msd_ensemble_mean
+    gamma_v2 = np.nanmean(relative_diff)
+
+    lag_times = np.arange(1, len(msd_ensemble_mean) + 1) * time_step #converted to seconds
+    valid_mask = (~np.isnan(gamma)) & (~np.isnan(gamma_v2)) & (~np.isnan(lag_times))
+
+    # plt.figure()
+    # plt.plot(lag_times[valid_mask], gamma[valid_mask], label='γ - v1: Rel. Diff')
+    # plt.axhline(gamma_v2, linestyle='--', color='gray', label=f'γ - v3: Mean Rel. Diff (={gamma_v2:.3f})')
+    # plt.xlabel('Time lag (s)')
+    # plt.ylabel('γ (Non-ergodicity parameter)')
+    # plt.title(f'γ vs Lag Time ({prefix})')
+    # plt.xscale('log')
+    # plt.yscale('log')
+    # plt.grid(True, which="both", ls="--", alpha=0.5)
+    # plt.legend()
+    # plt.savefig(f"Figure_gamma_{prefix}.png", dpi=300)
+
+    # gamma_df = pd.DataFrame({
+    #     "lag_time_s": lag_times[valid_mask],
+    #     "gamma_v1": gamma[valid_mask],
+    #     "gamma_v2": gamma_v2
+    # })
+    # gamma_df.to_csv(f"Table_gamma_{prefix}.csv", index=False)
+
+    # Rg calculations
+    Rg_all = np.array([calc_Rg(track[:, :2]) for track in group_tracks])
+    Rg_seg = [calc_Rg_seg(track[:, :2], seg_size) for track in group_tracks]
+    Rg_seg_flat = np.hstack(Rg_seg)
+
+    # plt.figure()
+    # plt.hist(Rg_all, bins=50, alpha=0.5, label='Overall Rg')
+    # plt.hist(Rg_seg_flat, bins=50, alpha=0.5, label='Segmented Rg')
+    # plt.xlabel('Rg (units)')
+    # plt.ylabel('Frequency')
+    # plt.legend()
+    # plt.title(f'Radius of Gyration Distribution ({prefix})')
+    # plt.savefig(f"Figure_rg_{prefix}.png", dpi=300)
+
+    # pd.DataFrame({"Rg": Rg_all}).to_csv(f"Table_rg_{prefix}_all.csv", index=False)
+    # pd.DataFrame({"Rg": Rg_seg_flat}).to_csv(f"Table_rg_{prefix}_segmented.csv", index=False)
+
+    # Optionally return computed values
+    return gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask
+
+
+def plot_and_save_gamma_rg_results(gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask, prefix, N):
+
+    #plot for gamma
+    plt.figure()
+    plt.plot(lag_times[valid_mask], gamma[valid_mask], label='γ - v1: Rel. Diff')
+    plt.axhline(gamma_v2, linestyle='--', color='gray', label=f'γ - v3: Mean Rel. Diff (={gamma_v2:.3f})')
+    plt.xlabel('Time lag (s)')
+    plt.ylabel('γ (Non-ergodicity parameter)')
+    plt.title(f'γ vs Lag Time ({prefix})')
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(f"Figure {N}_gamma_{prefix}.png", dpi=300)
+
+    # to save γ data to CSV
+    gamma_df = pd.DataFrame({
+        "lag_time_s": lag_times[valid_mask],
+        "gamma_v1": gamma[valid_mask],
+        "gamma_v2": gamma_v2
+    })
+    gamma_df.to_csv(f"Table {N}_gamma_{prefix}.csv", index=False)
+
+    # plot for Rg distributions
+    plt.figure()
+    plt.hist(Rg_all, bins=50, alpha=0.5, label='Overall Rg')
+    plt.hist(Rg_seg_flat, bins=50, alpha=0.5, label='Segmented Rg')
+    plt.xlabel('Rg (units)')
+    plt.ylabel('Frequency')
+    plt.legend()
+    plt.title(f'Radius of Gyration Distribution ({prefix})')
+    plt.tight_layout()
+    M = N+1
+    K = M +1
+    plt.savefig(f"Figure{M}_rg_{prefix}.png", dpi=300)
+
+    # to save Rg data to CSV
+    pd.DataFrame({"Rg": Rg_all}).to_csv(f"Table {M}_rg_{prefix}_all.csv", index=False)
+    pd.DataFrame({"Rg": Rg_seg_flat}).to_csv(f"Table {K}_rg_{prefix}_segmented.csv", index=False)
+
+    print(f"Plots and CSVs saved for group '{prefix}'.")
+
+# single
+gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask = compute_gamma_rg_from_group(single_trajs, time_step=0.025, seg_size=10)
+plot_and_save_gamma_rg_results(gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask, prefix = "single", N = 14)
+
+# double
+gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask = compute_gamma_rg_from_group(double_trajs, time_step=0.025, seg_size=10)
+plot_and_save_gamma_rg_results(gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask, prefix = "double", N = 17)
