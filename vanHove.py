@@ -1387,9 +1387,11 @@ def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
             msd_matrix[i, :len(msd)] = msd
 
     msd_mean = np.nanmean(msd_matrix, axis=0)
+    # debug
     print("msd_mean[:10]:", msd_mean[:10])
     print("msd_ensemble_mean[:10]:", msd_ensemble_mean[:10])
     print("Difference:", msd_ensemble_mean[:10] - msd_mean[:10])
+    
 
 
     gamma = (msd_ensemble_mean - msd_mean) / msd_ensemble_mean
@@ -1436,6 +1438,27 @@ def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
     # pd.DataFrame({"Rg": Rg_seg_flat}).to_csv(f"Table_rg_{prefix}_segmented.csv", index=False)
 
     # Optionally return computed values
+
+
+    print("msd_mean[:10]:", msd_mean[:10])
+    print("msd_ensemble_mean[:10]:", msd_ensemble_mean[:10])
+    print("gamma[:10]:", gamma[:10])
+    print("Are they equal?:", np.allclose(msd_mean, msd_ensemble_mean, equal_nan=True))
+    print("gamma_v2:", gamma_v2)
+
+    print("msd_mean mean/std:", np.nanmean(msd_mean), np.nanstd(msd_mean))
+    print("msd_ensemble_mean mean/std:", np.nanmean(msd_ensemble_mean), np.nanstd(msd_ensemble_mean))
+    print("gamma mean/std:", np.nanmean(gamma), np.nanstd(gamma))
+    
+    plt.plot(msd_mean, label="MSD mean")
+    plt.plot(msd_ensemble_mean, label="MSD ensemble mean")
+    plt.legend()
+    plt.savefig("debug_plot_msd_comparison.png")
+
+    print("Number of tracks:", len(tracks_filtered))
+    print("Lengths of first few tracks:", [len(tr) for tr in tracks_filtered[:5]])
+
+
     return gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask
 
 
