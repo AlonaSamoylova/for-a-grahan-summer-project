@@ -860,8 +860,9 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
                 #     slope, intercept = single_powerlaw_fit(msd_trimmed)
                 #     msd_fit_single = 10**intercept * (t ** slope)
                 #     # plt.plot(t, msd_fit_single, '--', label=f"1-seg Fit T{i+1} (α ≈ {slope:.2f})")
-                # except Exception as e:
-                #     print(f"Skipping 1-seg fit for Track {i+1}: {e}")
+                except Exception as e:
+                    # print(f"Skipping 1-seg fit for Track {i+1}: {e}")
+                    pass
 
                 # print(f"Skipping plot for Track {i+1} (classified as single power law)")
                 continue  # Skip the rest of the loop for this track
@@ -895,9 +896,9 @@ def CalcMSD(folder_path, min_length=50, time_ratio=2, seg_size=10): #enlarge min
                 all_fit_data.append(df)
 
 
-        # except Exception as e:
-        #     # print(f"Skipping 2-seg fit for Track {i+1}: {e}")
-        #     continue
+        except Exception as e:
+            # print(f"Skipping 2-seg fit for Track {i+1}: {e}")
+            pass
 
         # # Plot trajectory ; coomented for now to save time debugging van Hove
         # plt.plot(t, msd_trimmed, label=f"Track {i+1}")
