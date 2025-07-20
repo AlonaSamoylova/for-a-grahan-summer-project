@@ -179,7 +179,7 @@ def find_turning_point(msd_curve, min_idx=3):
     
     # Restrict to middle 60% of indices => as it's always towards end -> can be more effective than above for noicier regions
     start = int(0.2 * len(slope_change))
-    end = int(0.9 * len(slope_change)) #appears that 50% (-30%) filtered towards the end workeed better
+    end = int(0.6 * len(slope_change)) #appears that 50% (-30%) filtered towards the end workeed better
 
     # Find maximum slope change within this window
     restricted_change = slope_change[start:end]
