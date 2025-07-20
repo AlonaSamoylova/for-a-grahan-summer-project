@@ -1387,6 +1387,10 @@ def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
             msd_matrix[i, :len(msd)] = msd
 
     msd_mean = np.nanmean(msd_matrix, axis=0)
+    print("msd_mean[:10]:", msd_mean[:10])
+    print("msd_ensemble_mean[:10]:", msd_ensemble_mean[:10])
+    print("Difference:", msd_ensemble_mean[:10] - msd_mean[:10])
+
 
     gamma = (msd_ensemble_mean - msd_mean) / msd_ensemble_mean
     relative_diff = (msd_ensemble_mean - msd_mean) / msd_ensemble_mean
