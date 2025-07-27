@@ -1262,7 +1262,7 @@ def convert_tracks_to_df(tracks):
 # van hove for x, custom
 tracks_filtered, single_trajs, double_trajs = CalcMSD(path)
 
-def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=100, range_max=10.0): #15,30,46
+def linear_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=100, range_max=10.0): #15,30,46
     # tracks = CalcMSD(path)
     bin_edges = np.linspace(-range_max, range_max, bins + 1)
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
@@ -1323,6 +1323,83 @@ def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=1
     # df.to_csv("Table 7: vanhove_scaled_fits_data.csv", index=False)
 
     return all_data
+
+# same as above but with log scale
+def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=100, range_max=10.0):
+    all_data = []  # collect for CSV
+    plt.figure(figsize=(8, 5))
+
+    for lag in lags_to_plot:
+        all_scaled_dx = []
+
+        for traj in tracks:
+            if traj.shape[0] < lag + 1:
+                continue
+            x = traj[:, 0] ##x component  y = traj[:, 1]
+            if np.isnan(x).all() or np.allclose(x, x[0]):
+                continue
+
+            dx = x[lag:] - x[:-lag]
+            safe_log = np.log(np.abs(dx[dx != 0]))
+            if len(safe_log) == 0:
+                continue
+            xi = np.exp(np.mean(safe_log))
+            scaled_dx = dx / xi
+            all_scaled_dx.extend(scaled_dx)
+
+        if not all_scaled_dx:
+            continue
+
+        all_scaled_dx = np.abs(all_scaled_dx) 
+        all_scaled_dx = all_scaled_dx[all_scaled_dx > 0]# remove exact zeros to avoid log(0)
+
+        if len(all_scaled_dx) == 0:
+            raise ValueError("All displacements are zero; cannot create log-log plot.")
+
+        max_abs_dx = min(np.percentile(all_scaled_dx, 99), 50) # clip at 99th percentile
+        min_nonzero = max(np.min(all_scaled_dx), 1e-3) # set a reasonable lower limit -> # lower limit for it not to be too small/cause issues
+
+        bin_edges = np.logspace(np.log10(min_nonzero), np.log10(max_abs_dx), bins + 1)
+        bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+
+        hist, _ = np.histogram(all_scaled_dx, bins=bin_edges, density=True)
+        H, A, mu, sigma = gauss_fit(bin_centers, hist)
+        gauss_curve = gauss(bin_centers, H, A, mu, sigma)
+
+        plt.plot(bin_centers, hist, label=f"Δt = {lag}")
+        plt.plot(bin_centers, gauss_curve, '--', label=f"Fit Δt = {lag}, σ={sigma:.2f}")
+
+        for x_val, h_val, g_val in zip(bin_centers, hist, gauss_curve):
+            all_data.append({
+                "lag_time": lag,
+                "bin_center": x_val,
+                "P(Δx)": h_val,
+                "gaussian_fit": g_val
+            })
+
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xlabel("Scaled |Δx|")
+    plt.ylabel("P(|Δx|)")
+    plt.title("Van Hove (log-log) per lag with Gaussian fits")
+    plt.legend()
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.tight_layout()
+    plt.savefig("Figure 7: vanhove_log_scaled_fits.png", dpi=300)
+
+    # plt.show()
+
+    # save data as CSV
+
+    df = pd.DataFrame(all_data)
+    df.to_csv("Table 7: vanhove_log_scaled_fits_data.csv", index=False)
+
+    return all_data
+
+
+
+
+
 
 # to save all plots instead of 1 by 1
 
