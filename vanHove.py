@@ -779,11 +779,11 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
         for idx, _ in longest_indices:
             msd = msd_sum[idx]
-            time = np.arange(len(msd)) * dt
+            tIme = np.arange(len(msd)) * dt
 
             # clean MSD: remove NaNs and nonpositive values; just to ensure
             mask = ~np.isnan(msd) & (msd > 0)
-            t_clean = time[mask]
+            t_clean = tIme[mask]
             msd_clean = np.array(msd)[mask]
 
             if len(msd_clean) < 5:
