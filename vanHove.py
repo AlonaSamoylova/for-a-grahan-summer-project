@@ -793,21 +793,21 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
             slope_single, intercept_single = single_powerlaw_fit(msd_clean)
             msd_fit_single = 10**intercept_single * (t_clean ** slope_single)
 
-            # two-segment power-law fit
-            break1 = find_turning_point(msd_clean)
-            A_guess = np.mean(msd_clean[:5])
-            initial_guess = [A_guess, 0.3, 1.0]
-            bounds_2seg = ([1e-5, 0.1, 0.1], [10, 3.0, 3.0])
+            # # two-segment power-law fit
+            # break1 = find_turning_point(msd_clean)
+            # A_guess = np.mean(msd_clean[:5])
+            # initial_guess = [A_guess, 0.3, 1.0]
+            # bounds_2seg = ([1e-5, 0.1, 0.1], [10, 3.0, 3.0])
 
-            def fit_wrapper(x, A, alpha1, alpha2):
-                return bkn_pow_2seg(x, A, alpha1, alpha2, break1)[0]
+            # def fit_wrapper(x, A, alpha1, alpha2):
+            #     return bkn_pow_2seg(x, A, alpha1, alpha2, break1)[0]
 
-            try:
-                popt_2seg, _ = curve_fit(fit_wrapper, t_clean, msd_clean, p0=initial_guess, bounds=bounds_2seg)
-                msd_fit_2seg, _ = bkn_pow_2seg(t_clean, *popt_2seg, break1)
-            except Exception as e:
-                print(f"Fit failed for trajectory {idx}: {e}")
-                continue
+            # try:
+            #     popt_2seg, _ = curve_fit(fit_wrapper, t_clean, msd_clean, p0=initial_guess, bounds=bounds_2seg)
+            #     msd_fit_2seg, _ = bkn_pow_2seg(t_clean, *popt_2seg, break1)
+            # except Exception as e:
+            #     print(f"Fit failed for trajectory {idx}: {e}")
+            #     continue
 
             # storing for CSV
             for t, o, s, d in zip(t_clean, msd_clean, msd_fit_single, msd_fit_2seg):
@@ -816,13 +816,13 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
                     "time_s": t,
                     "msd_original": o,
                     "msd_fit_single": s,
-                    "msd_fit_2seg": d
+                    # "msd_fit_2seg": d
                 })
 
             # plot
             plt.loglog(t_clean, msd_clean, label=f'Traj {idx}', alpha=0.5)
             plt.loglog(t_clean, msd_fit_single, '--', alpha=0.7)
-            plt.loglog(t_clean, msd_fit_2seg, '--', alpha=0.7)
+            # plt.loglog(t_clean, msd_fit_2seg, '--', alpha=0.7)
 
         plt.xlabel("Time (s)")
         plt.ylabel("MSD (μm²)")
