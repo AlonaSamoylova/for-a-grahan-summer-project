@@ -767,7 +767,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
 
     # Def. the cutoff for 1 second (in frames)
-    max_frames = int(1.0 / 0.025)  # = 40
+    # max_frames = int(1.0 / 0.025)  # = 40
 
     # storages for histogram
     alpha1_vals = []
@@ -803,7 +803,8 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
     # for i, msd in enumerate(msd_sum[:70]): #random 5 trajectories, ->change to see more
     for i, msd in enumerate(msd_sum): #!!!!!!!!!!!! ONLY FOR GRAHAM, pls don't try to run at your own computer/laptop
-        msd_trimmed_unfiltered = msd[:max_frames]
+        # msd_trimmed_unfiltered = msd[:max_frames]
+        msd_trimmed_unfiltered = msd
         # Filter valid indices
         valid_mask = ~np.isnan(msd_trimmed_unfiltered) & ~np.isinf(msd_trimmed_unfiltered)
 
