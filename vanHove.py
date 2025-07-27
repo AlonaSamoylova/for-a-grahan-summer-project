@@ -804,7 +804,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
             try:
                 popt_2seg, _ = curve_fit(fit_wrapper, t_clean, msd_clean, p0=initial_guess, bounds=bounds_2seg)
-                msd_fit_2seg, A2_2seg = bkn_pow_2seg(t_clean, *popt_2seg, break1)
+                msd_fit_2seg, _ = bkn_pow_2seg(t_clean, *popt_2seg, break1)
             except Exception as e:
                 print(f"Fit failed for trajectory {idx}: {e}")
                 continue
