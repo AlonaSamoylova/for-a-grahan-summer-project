@@ -1324,7 +1324,7 @@ def linear_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100],
 
     return all_data
 
-# same as above but with log scale
+# same as above but with log scale + added cage hopping
 def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=100, range_max=10.0):
     all_data = []  # collect for CSV
     plt.figure(figsize=(8, 5))
@@ -1387,6 +1387,7 @@ def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=1
     plt.tight_layout()
     plt.savefig("Figure 7: vanhove_log_scaled_fits.png", dpi=300)
 
+
     # plt.show()
 
     # save data as CSV
@@ -1394,10 +1395,30 @@ def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=1
     df = pd.DataFrame(all_data)
     df.to_csv("Table 7: vanhove_log_scaled_fits_data.csv", index=False)
 
-    return all_data
+    #cage hopping: 
+    seg_size = 10  # to adjust as needed
+    Rg_hoppers = []
+    Rg_non_hoppers = []
 
+    for traj in tracks:
+        if traj.shape[0] < seg_size:
+            continue  # too short to segment
 
+        Rg_values = calc_Rg_seg(traj, seg_size) #applied to each traj.
 
+        if len(Rg_values) == 0 or np.isnan(Rg_values).all():
+            continue
+
+        mean_Rg = np.nanmean(Rg_values)
+        std_Rg = np.nanstd(Rg_values)
+        threshold = mean_Rg + 2 * std_Rg  #mean + 2×std.
+
+        if np.any(Rg_values > threshold):
+            Rg_hoppers.append(traj)
+        else:
+            Rg_non_hoppers.append(traj)
+
+    return all_data, Rg_hoppers, Rg_non_hoppers
 
 
 
@@ -1436,13 +1457,56 @@ def save_van_hove_results(all_data, csv_filename="Table_vanHove.csv", fig_filena
 # try change y-axis to log scale (instead of linear) - highlight differences
 
 # overall
-data = pooled_log_scaled_van_hove_per_lag(tracks_filtered)
+data, Rg_hoppers, Rg_non_hoppers = pooled_log_scaled_van_hove_per_lag(tracks_filtered) #vanhove data +cagging
 save_van_hove_results(data, csv_filename="Table 7: vanhove_scaled_fits_data.csv", fig_filename="Figure 7: vanhove_scaled_fits.png")
 
-data_single = pooled_log_scaled_van_hove_per_lag(single_trajs)
+data_single, Rg_hoppers_single, Rg_non_hoppers_single = pooled_log_scaled_van_hove_per_lag(single_trajs)
 save_van_hove_results(data_single, csv_filename="Table 12: vanhove_scaled_fits_data_single.csv", fig_filename="Figure 12: vanhove_scaled_fits_single.png")
-data_double = pooled_log_scaled_van_hove_per_lag(double_trajs)
+
+data_double, Rg_hoppers_double, Rg_non_hoppers_double = pooled_log_scaled_van_hove_per_lag(double_trajs)
 save_van_hove_results(data_double, csv_filename="Table 13: vanhove_scaled_fits_data_double.csv", fig_filename="Figure 13: vanhove_scaled_fits_double.png")
+
+
+def save_rg_classified_tracks_to_csv(Rg_hoppers, Rg_non_hoppers, output_prefix="RgClassified", number=1):
+    """
+    Saves cage-hopping and non-hopping tracks to separate CSV files in TrackMate-like format.
+
+    Parameters:
+        Rg_hoppers (list of array): List of (N x 2) arrays for hopping tracks (x, y).
+        Rg_non_hoppers (list of array): List of (N x 2) arrays for non-hopping tracks (x, y).
+        output_prefix (str): Prefix for output file names.
+    """
+    def make_df(tracks, label):
+        all_rows = []
+        for track_id, traj in enumerate(tracks):
+            for frame, (x, y) in enumerate(traj):
+                all_rows.append({
+                    "Label": f"{label}_{track_id}_{frame}",
+                    "ID": len(all_rows),
+                    "TRACK_ID": track_id,
+                    "QUALITY": 1.0,
+                    "POSITION_X": x,
+                    "POSITION_Y": y,
+                    "POSITION_Z": 0.0,
+                    "POSITION_T": frame,
+                    "FRAME": frame
+                })
+        return pd.DataFrame(all_rows)
+
+    # creating DataFrames
+    df_hop = make_df(Rg_hoppers, "HOP")
+    df_nonhop = make_df(Rg_non_hoppers, "NONHOP")
+    
+    # saving to CSV
+    df_hop.to_csv(f"Table {number}_{output_prefix}_hoppers.csv", index=False)
+    df_nonhop.to_csv(f"Table {number+1}_{output_prefix}_nonhoppers.csv", index=False)
+
+    print(f"Saved: {output_prefix}_hoppers.csv and {output_prefix}_nonhoppers.csv")
+
+save_rg_classified_tracks_to_csv(Rg_hoppers=Rg_hoppers, Rg_non_hoppers=Rg_non_hoppers, output_prefix="overall", number=21)
+save_rg_classified_tracks_to_csv(Rg_hoppers=Rg_hoppers_single, Rg_non_hoppers=Rg_non_hoppers_single, output_prefix="single", number=23)
+save_rg_classified_tracks_to_csv(Rg_hoppers=Rg_hoppers_double, Rg_non_hoppers=Rg_non_hoppers_double, output_prefix="double", number=25)
+
 
 
 
