@@ -766,7 +766,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
         print("Plotting MSD for 10 longest trajectories...")
 
         # to sort by trajectory length and pick 10 longest
-        traj_lengths = [(i, len(traj)) for i, traj in enumerate(tracks)]
+        traj_lengths = [(i, len(traj)) for i, traj in enumerate(msd_sum)]
         longest_indices = sorted(traj_lengths, key=lambda x: x[1], reverse=True)[:10]
 
         # preparing plot
