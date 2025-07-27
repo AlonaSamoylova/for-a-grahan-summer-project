@@ -1476,22 +1476,17 @@ def save_rg_classified_tracks_to_csv(Rg_hoppers, Rg_non_hoppers, output_prefix="
         Rg_non_hoppers (list of array): List of (N x 2) arrays for non-hopping tracks (x, y).
         output_prefix (str): Prefix for output file names.
     """
-    def make_df(tracks, label):
-        all_rows = []
-        for track_id, traj in enumerate(tracks):
-            for frame, (x, y) in enumerate(traj):
-                all_rows.append({
-                    "Label": f"{label}_{track_id}_{frame}",
-                    "ID": len(all_rows),
-                    "TRACK_ID": track_id,
-                    "QUALITY": 1.0,
-                    "POSITION_X": x,
-                    "POSITION_Y": y,
-                    "POSITION_Z": 0.0,
-                    "POSITION_T": frame,
-                    "FRAME": frame
+    def make_df(rg_list, label):
+        records = []
+        for traj_id, rg_traj in enumerate(rg_list):
+            for frame, rg_val in enumerate(rg_traj):
+                records.append({
+                    "trajectory_id": traj_id,
+                    "frame": frame,
+                    "Rg": rg_val,
+                    "class": label
                 })
-        return pd.DataFrame(all_rows)
+        return pd.DataFrame(records)
 
     # creating DataFrames
     df_hop = make_df(Rg_hoppers, "HOP")
