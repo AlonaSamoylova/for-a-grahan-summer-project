@@ -458,7 +458,7 @@ def MSD_exp_twostep(msd_temp, turning_pt):
 # main function;
 # to process and analyze track data
 
-def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge min length -> 100, 200, van hoff corelation function
+def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge min length -> 100, 200, van hoff corelation function =>top 10-20 of longest traj
     """
     Process trajectory data and calculate MSD, non-ergodicity, and Rg.
 
@@ -860,7 +860,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
             classification = classify_powerlaw_type(alpha1, alpha2)
             # print(f"Track {i+1} classified as {classification} power law. Alpha_1 is:{alpha1:.2f} and Alpha2 is:{alpha2:.2f}")
 
-
+            trackmate_single_data = [] #to save data in same format : to create sigle data csv in the same format as original one
             if classification == 'single':
                     # Single power-law fit
                 single += 1
@@ -875,6 +875,17 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
                 #     pass
 
                 # # print(f"Skipping plot for Track {i+1} (classified as single power law)")
+
+                 # TrackMate-style storage
+                for frame_idx, (x, y) in enumerate(tracks_filtered[i][:, :2]):
+                    trackmate_single_data.append({
+                        "TRACK_ID": single,
+                        "POSITION_X": x,
+                        "POSITION_Y": y,
+                        "POSITION_T": frame_idx
+                    })
+
+
                 continue  # Skip the rest of the loop for this track
             
             else:
@@ -932,6 +943,13 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
         # plt.show()
 
         # concatenate all dataframes and save as a single file
+
+    # saving single traj. data
+    df_single_export = pd.DataFrame(trackmate_single_data)
+    df_single_export.to_csv("Table 20_single_tracks_exported.csv", index=False)
+    print("Saved TrackMate-style single trajectories to 'single_tracks_exported.csv'")
+
+    
     if all_fit_data:
         full_df = pd.concat(all_fit_data, ignore_index=True)
         full_df.to_csv("Table 5: all_tracks_msd_fits.csv", index=False)
@@ -1258,7 +1276,7 @@ def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=1
         for traj in tracks:
             if traj.shape[0] < lag + 1:
                 continue
-            x = traj[:, 0] #x component
+            x = traj[:, 0] #x component  y = traj[:, 1]
             if np.isnan(x).all() or np.allclose(x, x[0]):
                 continue
 
