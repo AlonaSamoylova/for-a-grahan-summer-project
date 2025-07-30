@@ -936,6 +936,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
             # print(f"Track {i+1} classified as {classification} power law. Alpha_1 is:{alpha1:.2f} and Alpha2 is:{alpha2:.2f}")
 
             trackmate_single_data = [] #to save data in same format : to create sigle data csv in the same format as original one
+            trackmate_double_data = []
             if classification == 'single':
                     # Single power-law fit
                 single += 1
@@ -993,6 +994,15 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
                 })
                 all_fit_data.append(df)
 
+                                 # TrackMate-style storage
+                for frame_idx, (x, y) in enumerate(tracks_filtered[i][:, :2]):
+                    trackmate_double_data.append({
+                        "TRACK_ID": single,
+                        "POSITION_X": x,
+                        "POSITION_Y": y,
+                        "POSITION_T": frame_idx
+                    })
+
 
         except Exception as e:
             # print(f"Skipping 2-seg fit for Track {i+1}: {e}")
@@ -1023,6 +1033,11 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     df_single_export = pd.DataFrame(trackmate_single_data)
     df_single_export.to_csv("Table 20_single_tracks_exported.csv", index=False)
     print("Saved TrackMate-style single trajectories to 'single_tracks_exported.csv'")
+
+    # saving double traj. data
+    df_double_export = pd.DataFrame(trackmate_double_data)
+    df_single_export.to_csv("Table 28_double_tracks_exported.csv", index=False)
+    print("Saved TrackMate-style double trajectories to 'double_tracks_exported.csv'")
 
     
     if all_fit_data:
