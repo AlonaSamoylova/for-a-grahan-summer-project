@@ -1036,7 +1036,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
     # saving double traj. data
     df_double_export = pd.DataFrame(trackmate_double_data)
-    df_single_export.to_csv("Table 28_double_tracks_exported.csv", index=False)
+    df_double_export.to_csv("Table 28_double_tracks_exported.csv", index=False)
     print("Saved TrackMate-style double trajectories to 'double_tracks_exported.csv'")
 
     
