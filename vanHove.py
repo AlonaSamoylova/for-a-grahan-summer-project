@@ -997,7 +997,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
                                  # TrackMate-style storage
                 for frame_idx, (x, y) in enumerate(tracks_filtered[i][:, :2]):
                     trackmate_double_data.append({
-                        "TRACK_ID": single,
+                        "TRACK_ID": double,
                         "POSITION_X": x,
                         "POSITION_Y": y,
                         "POSITION_T": frame_idx
