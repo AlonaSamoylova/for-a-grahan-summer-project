@@ -882,6 +882,10 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     single_trajs = []
     double_trajs = []
 
+    # to save fir csv
+    trackmate_single_all = []  # to store ALL single track data
+    trackmate_double_all = []  # to store ALL double track data
+
 
 
 
@@ -949,24 +953,14 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
             classification = classify_powerlaw_type(alpha1, alpha2)
             # print(f"Track {i+1} classified as {classification} power law. Alpha_1 is:{alpha1:.2f} and Alpha2 is:{alpha2:.2f}")
 
-            trackmate_single_data = [] #to save data in same format : to create sigle data csv in the same format as original one
-            trackmate_double_data = []
             if classification == 'single':
-                    # Single power-law fit
+                # Single power-law fit
                 single += 1
                 single_group.append(msd_trimmed) #To separate storage
                 single_trajs.append(tracks_filtered[i][:, :2])  # keep full x, y trajectory
-                # # try:
-                #     slope, intercept = single_powerlaw_fit(msd_trimmed)
-                #     msd_fit_single = 10**intercept * (t ** slope)
-                #     # plt.plot(t, msd_fit_single, '--', label=f"1-seg Fit T{i+1} (α ≈ {slope:.2f})")
-                # except Exception as e:
-                #     # print(f"Skipping 1-seg fit for Track {i+1}: {e}")
-                #     pass
 
-                # # print(f"Skipping plot for Track {i+1} (classified as single power law)")
-
-                 # TrackMate-style storage
+                # TrackMate-style storage
+                trackmate_single_data = []  # reset for this trajectory
                 for frame_idx, (x, y) in enumerate(tracks_filtered[i][:, :2]):
                     trackmate_single_data.append({
                         "TRACK_ID": single,
@@ -974,10 +968,10 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
                         "POSITION_Y": y,
                         "POSITION_T": frame_idx
                     })
-
+                trackmate_single_all.extend(trackmate_single_data)  # save all
 
                 continue  # Skip the rest of the loop for this track
-            
+
             elif classification == 'double':
                 
                 double +=1
@@ -994,9 +988,6 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
                 # Plot
                 plt.plot(t, msd_trimmed, label=f"Track {i+1} MSD", color="black")
                 plt.plot(t, msd_fit_2seg, '--', label=f"2-Seg Fit v.2 α₁ ≈ {popt[1]:.2f}, α₂ ≈ {popt[2]:.2f}. Turning point is: {break1}")
-                
-
-                # print(f'Tract #{i+1} MSD. Turning point is: {break1}')
 
                 # to store data in a single dataframe
                 df = pd.DataFrame({
@@ -1008,7 +999,8 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
                 })
                 all_fit_data.append(df)
 
-                                 # TrackMate-style storage
+                # TrackMate-style storage
+                trackmate_double_data = []  # reset for this trajectory
                 for frame_idx, (x, y) in enumerate(tracks_filtered[i][:, :2]):
                     trackmate_double_data.append({
                         "TRACK_ID": double,
@@ -1016,9 +1008,10 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
                         "POSITION_Y": y,
                         "POSITION_T": frame_idx
                     })
+                trackmate_double_all.extend(trackmate_double_data)  # save all
+            
             else: 
                 
-
                 skipped_class_unknown += 1
                 continue
 
@@ -1059,15 +1052,15 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     print(f"  ➤ Skipped (fit failed):       {skipped_fit_fail}")
     print(f"  ➤ Skipped (unknown type):     {skipped_class_unknown}")
 
-    # saving single traj. data
-    df_single_export = pd.DataFrame(trackmate_single_data)
-    df_single_export.to_csv("Table 20_single_tracks_exported.csv", index=False)
-    print("Saved TrackMate-style single trajectories to 'single_tracks_exported.csv'")
+    # saving final TrackMate-style CSVs
+    df_single = pd.DataFrame(trackmate_single_all)
+    df_single.to_csv("Table_20_single_tracks_exported.csv", index=False)
 
-    # saving double traj. data
-    df_double_export = pd.DataFrame(trackmate_double_data)
-    df_double_export.to_csv("Table 28_double_tracks_exported.csv", index=False)
-    print("Saved TrackMate-style double trajectories to 'double_tracks_exported.csv'")
+    df_double = pd.DataFrame(trackmate_double_all)
+    df_double.to_csv("Table_28_double_tracks_exported.csv", index=False)
+
+    print(f"Exported {len(trackmate_single_all)} single track points.")
+    print(f"Exported {len(trackmate_double_all)} double track points.")
 
     
     if all_fit_data:
