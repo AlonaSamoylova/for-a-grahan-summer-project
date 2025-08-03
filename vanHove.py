@@ -1895,7 +1895,12 @@ def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
     # plt.tight_layout()
     # plt.show()
 
-    return gamma, gamma_v2, msd_ensemble_mean, msd_mean, lag_times, valid_mask
+    # Rg calculations
+    Rg_all = np.array([calc_Rg(track[:, :2]) for track in group_tracks])
+    Rg_seg = [calc_Rg_seg(track[:, :2], seg_size) for track in group_tracks]
+    Rg_seg_flat = np.hstack(Rg_seg)
+
+    return gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask
 
 def plot_and_save_gamma_rg_results(gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask, prefix, N):
 
