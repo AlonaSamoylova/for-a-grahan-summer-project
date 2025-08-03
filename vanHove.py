@@ -1748,7 +1748,6 @@ def old_compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
     return gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask
 
 def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
-    group_tracks = CalcMSD(path)
 
     # mainly copied from loop above
     # to compute ensemble MSD:
