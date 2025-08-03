@@ -1783,7 +1783,13 @@ def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
 
     for i, traj in enumerate(group_tracks):
         # Convert frame index to time using frame column (3rd column) and scale
-        timewave = (traj[:, 2] - traj[0, 2]) / 25.0  # adjust as needed to match original scale
+
+        if traj.shape[1] >= 3:
+            timewave = (traj[:, 2] - traj[0, 2]) / 25.0  # frame-based
+        else:
+            timewave = np.arange(traj.shape[0]) * time_step  # uniform spacing fallback
+
+        # timewave = (traj[:, 2] - traj[0, 2]) / 25.0  # adjust as needed to match original scale
         msd = calc_msd_2D_longtrack(traj[:, :2], timewave, time_ratio)
 
         if msd is not None and len(msd) > 1 and not np.isnan(msd).all():
