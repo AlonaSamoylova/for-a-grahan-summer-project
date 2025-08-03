@@ -1054,10 +1054,10 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
     # saving final TrackMate-style CSVs
     df_single = pd.DataFrame(trackmate_single_all)
-    df_single.to_csv("Table_20_single_tracks_exported.csv", index=False)
+    df_single.to_csv("Table 20_single_tracks_exported.csv", index=False)
 
     df_double = pd.DataFrame(trackmate_double_all)
-    df_double.to_csv("Table_28_double_tracks_exported.csv", index=False)
+    df_double.to_csv("Table 28_double_tracks_exported.csv", index=False)
 
     print(f"Exported {len(trackmate_single_all)} single track points.")
     print(f"Exported {len(trackmate_double_all)} double track points.")
@@ -1617,7 +1617,7 @@ save_rg_classified_tracks_to_csv(Rg_hoppers=Rg_hoppers_double, Rg_non_hoppers=Rg
 
 
 
-def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
+def old_compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
 
     # mainly copied from loop above
     # to compute ensemble MSD:
@@ -1747,6 +1747,150 @@ def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
 
     return gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask
 
+def compute_gamma_rg_from_group(time_step=0.025, seg_size=10):
+    group_tracks = CalcMSD(path)
+
+    # mainly copied from loop above
+    # to compute ensemble MSD:
+    max_length = max(traj.shape[0] for traj in group_tracks)
+    timewave = np.arange(max_length)
+    time_ratio = 1
+
+    msd_ensemble_sum = []
+
+    for track in group_tracks:
+        msd_ensemble_temp = calc_msd_2D_ensemble_longtrack(track[:, :2], timewave, time_ratio)
+
+        if (
+            msd_ensemble_temp is not None
+            and len(msd_ensemble_temp) > 1
+            and not np.isnan(msd_ensemble_temp).all()
+        ):
+            msd_ensemble_sum.append(msd_ensemble_temp)
+        else:
+            print("Skipping a track due to invalid or empty MSD.")
+
+    ensemble_matrix = np.full((len(msd_ensemble_sum), max_length), np.nan)
+    for i, msd in enumerate(msd_ensemble_sum):
+        ensemble_matrix[i, :len(msd)] = msd
+
+    msd_ensemble_mean = np.nanmean(ensemble_matrix, axis=0)
+    msd_ensemble_mean[msd_ensemble_mean == 0] = np.nan
+
+    # to compute MSD mean across individual trajectories !!!!!!!!!
+    skipped = 0
+    msd_sum = []  # storage
+    skipped = 0
+
+    for i, traj in enumerate(group_tracks):
+        # Convert frame index to time using frame column (3rd column) and scale
+        timewave = (traj[:, 2] - traj[0, 2]) / 25.0  # adjust as needed to match original scale
+        msd = calc_msd_2D_longtrack(traj[:, :2], timewave, time_ratio)
+
+        if msd is not None and len(msd) > 1 and not np.isnan(msd).all():
+            msd_sum.append(msd)
+        else:
+            skipped += 1
+            print(f"Skipping track {i} due to invalid or empty MSD.")
+
+    print(f"Skipped {skipped} tracks during MSD mean calculation.")
+
+    # Construct MSD matrix
+    max_length = max(len(msd) for msd in msd_sum)
+    msd_matrix = np.full((len(msd_sum), max_length), np.nan)
+
+    for i, msd in enumerate(msd_sum):
+        msd_matrix[i, :len(msd)] = msd
+
+    # Average across valid trajectories
+    msd_mean = np.nanmean(msd_matrix, axis=0)
+
+
+    # debug
+    print("msd_mean[:10]:", msd_mean[:10])
+    print("msd_ensemble_mean[:10]:", msd_ensemble_mean[:10])
+    print("Difference:", msd_ensemble_mean[:10] - msd_mean[:10])
+    
+
+    # Ensure both MSD arrays are the same length , in case if data somehow has shorter tracks
+    min_len = min(len(msd_ensemble_mean), len(msd_mean))
+    msd_ensemble_mean = msd_ensemble_mean[:min_len]
+    msd_mean = msd_mean[:min_len]
+
+    gamma = (msd_ensemble_mean - msd_mean) / msd_ensemble_mean
+    relative_diff = gamma.copy()
+    gamma_v2 = np.nanmean(relative_diff)
+
+
+    # gamma = (msd_ensemble_mean - msd_mean) / msd_ensemble_mean
+    # relative_diff = (msd_ensemble_mean - msd_mean) / msd_ensemble_mean
+    # gamma_v2 = np.nanmean(relative_diff)
+    # print(f"gamma 1: {gamma}, gamma 2 {gamma_v2}")
+    print("gamma shape:", gamma.shape)
+    print("valid gamma points:", np.sum(~np.isnan(gamma)))
+
+
+    lag_times = np.arange(1, len(msd_ensemble_mean) + 1) * time_step #converted to seconds
+    # valid_mask = (~np.isnan(gamma)) & (~np.isnan(gamma_v2)) & (~np.isnan(lag_times))
+    valid_mask = (~np.isnan(gamma)) & (~np.isnan(lag_times))
+
+
+    # plt.figure()
+    # plt.plot(lag_times[valid_mask], gamma[valid_mask], label='γ - v1: Rel. Diff')
+    # plt.axhline(gamma_v2, linestyle='--', color='gray', label=f'γ - v3: Mean Rel. Diff (={gamma_v2:.3f})')
+    # plt.xlabel('Time lag (s)')
+    # plt.ylabel('γ (Non-ergodicity parameter)')
+    # plt.title(f'γ vs Lag Time ({prefix})')
+    # plt.xscale('log')
+    # plt.yscale('log')
+    # plt.grid(True, which="both", ls="--", alpha=0.5)
+    # plt.legend()
+    # plt.savefig(f"Figure_gamma_{prefix}.png", dpi=300)
+
+    # gamma_df = pd.DataFrame({
+    #     "lag_time_s": lag_times[valid_mask],
+    #     "gamma_v1": gamma[valid_mask],
+    #     "gamma_v2": gamma_v2
+    # })
+    # gamma_df.to_csv(f"Table_gamma_{prefix}.csv", index=False)
+
+
+    # # single track test:
+    # # Select a single track
+    # track = group_tracks[0]  # or any other index, e.g., group_tracks[5]
+
+    # # to generate timewave — use either of these depending on your data structure
+    # timewave = np.arange(track.shape[0])  # generic, evenly spaced
+    # # timewave = (track[:, 2] - track[0, 2]) / 25  # use if third column is frame/time
+
+    # time_ratio = 1  # usually 1 unless you scale time steps
+
+    # # to calculate MSDs
+    # msd_ensemble = calc_msd_2D_ensemble_longtrack(track[:, :2], timewave, time_ratio)
+    # msd_mean = calc_msd_2D_longtrack(track[:, :2], timewave, time_ratio)
+
+    # # print first few values for inspection
+    # print("msd_ensemble[:10]:", msd_ensemble[:10] if msd_ensemble is not None else "None")
+    # print("msd_mean[:10]:", msd_mean[:10] if msd_mean is not None else "None")
+
+    # # to plot both on the same graph
+    # plt.figure(figsize=(6, 4))
+    # if msd_mean is not None:
+    #     plt.plot(msd_mean, label='Time-averaged MSD', lw=2)
+    # if msd_ensemble is not None:
+    #     plt.plot(msd_ensemble, label='Ensemble MSD', lw=2, linestyle='--')
+
+    # plt.xlabel('Lag step')
+    # plt.ylabel('MSD')
+    # plt.yscale('log')
+    # plt.xscale('log')
+    # plt.title('Single Track: Time-averaged vs Ensemble MSD')
+    # plt.grid(True, which='both', ls='--', alpha=0.5)
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.show()
+
+    return gamma, gamma_v2, msd_ensemble_mean, msd_mean, lag_times, valid_mask
 
 def plot_and_save_gamma_rg_results(gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask, prefix, N):
 
