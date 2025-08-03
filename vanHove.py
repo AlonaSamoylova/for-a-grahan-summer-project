@@ -856,6 +856,14 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     single = 0
     double = 0
 
+
+    # devugging
+    total_tracks = 0             # Total number of tracks processed
+    skipped_short = 0            # Skipped due to too few points or bad MSD
+    skipped_fit_fail = 0         # Skipped due to curve_fit failure
+    skipped_class_unknown = 0    # Skipped due to unrecognized classification
+
+
     # filter parameters storage for only double power-law classified tracks
     alpha1_double = []
     alpha2_double = []
@@ -875,6 +883,9 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     double_trajs = []
 
 
+
+
+
     # for i, msd in enumerate(msd_sum[:70]): #random 5 trajectories, ->change to see more
     for i, msd in enumerate(msd_sum): #!!!!!!!!!!!! ONLY FOR GRAHAM, pls don't try to run at your own computer/laptop
         # msd_trimmed_unfiltered = msd[:max_frames]
@@ -889,8 +900,11 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
         t = t_unfiltered[valid_mask]
         msd_trimmed = msd_trimmed_unfiltered[valid_mask]
 
+        total_tracks += 1
+
         # Optional: skip short or empty tracks
-        if len(msd_clean) < 10:
+        if len(msd_clean) < 10 or np.any(np.isnan(msd_trimmed)) or np.any(msd_trimmed <= 0):
+            skipped_short += 1
             raise ValueError("Not enough valid data points.")
 
         
@@ -964,7 +978,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
                 continue  # Skip the rest of the loop for this track
             
-            else:
+            elif classification == 'double':
                 
                 double +=1
                 double_group.append(msd_trimmed) #to separate storage
@@ -1002,11 +1016,19 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
                         "POSITION_Y": y,
                         "POSITION_T": frame_idx
                     })
+            else: 
+                
 
+                skipped_class_unknown += 1
+                continue
 
         except Exception as e:
             # print(f"Skipping 2-seg fit for Track {i+1}: {e}")
-            pass
+            skipped_fit_fail += 1
+            continue
+
+
+            # pass
 
         # # Plot trajectory ; coomented for now to save time debugging van Hove
         # plt.plot(t, msd_trimmed, label=f"Track {i+1}")
@@ -1028,6 +1050,14 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
         # plt.show()
 
         # concatenate all dataframes and save as a single file
+
+    print("\nProcessing Summary/Debugging:")
+    print(f"  Total tracks processed:       {total_tracks}")
+    print(f"  ➤ Saved as single:            {single}")
+    print(f"  ➤ Saved as double:            {double}")
+    print(f"  ➤ Skipped (too short/bad):    {skipped_short}")
+    print(f"  ➤ Skipped (fit failed):       {skipped_fit_fail}")
+    print(f"  ➤ Skipped (unknown type):     {skipped_class_unknown}")
 
     # saving single traj. data
     df_single_export = pd.DataFrame(trackmate_single_data)
@@ -1452,7 +1482,7 @@ def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=1
         bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
 
         hist, _ = np.histogram(all_scaled_dx, bins=bin_edges, density=True)
-        H, A, mu, sigma = gauss_fit(bin_centers, hist)
+        H, A, mu, sigma = gauss_fit(bin_centers, hist) #may not be gaussioan anymore -> because 
         gauss_curve = gauss(bin_centers, H, A, mu, sigma)
 
         plt.plot(bin_centers, hist, label=f"Δt = {lag}")
@@ -1503,7 +1533,7 @@ def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=1
         threshold = mean_Rg + 2 * std_Rg  #mean + 2×std.
 
         if np.any(Rg_values > threshold):
-            Rg_hoppers.append(traj)
+            Rg_hoppers.append(traj) #save the idx; look for %
         else:
             Rg_non_hoppers.append(traj)
 
