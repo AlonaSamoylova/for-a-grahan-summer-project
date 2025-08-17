@@ -1436,8 +1436,74 @@ def linear_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100],
 
     return all_data
 
+
+# log-linear for the two side VanHove; nearly same as above
+def linearLog_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=100, range_max=10.0): #15,30,46
+    # tracks = CalcMSD(path)
+    bin_edges = np.linspace(-range_max, range_max, bins + 1)
+    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+    
+    all_data = []  # collect for CSV
+
+    plt.figure(figsize=(8, 5))
+
+    for lag in lags_to_plot:
+        all_scaled_dx = []
+
+        for traj in tracks:
+            if traj.shape[0] < lag + 1:
+                continue
+            x = traj[:, 0] #x component  y = traj[:, 1]
+            if np.isnan(x).all() or np.allclose(x, x[0]):
+                continue
+
+            dx = x[lag:] - x[:-lag]
+            safe_log = np.log(np.abs(dx[dx != 0]))
+            if len(safe_log) == 0:
+                continue
+            xi = np.exp(np.mean(safe_log))
+            scaled_dx = dx / xi
+            all_scaled_dx.extend(scaled_dx)
+
+        if not all_scaled_dx:
+            continue
+        
+        # histogram of all scaled displacements
+        hist, _ = np.histogram(all_scaled_dx, bins=bin_edges, density=True)
+        H, A, mu, sigma = gauss_fit(bin_centers, hist)
+        #gaussian fit
+        gauss_curve = gauss(bin_centers, H, A, mu, sigma)
+
+        plt.plot(bin_centers, hist, label=f"Δt = {lag}")
+        plt.plot(bin_centers, gauss_curve, '--', label=f"Fit Δt = {lag}, σ={sigma:.2f}")
+
+        # to save each point to all_data
+        for x_val, h_val, g_val in zip(bin_centers, hist, gauss_curve):
+            all_data.append({
+                "lag_time": lag,
+                "bin_center": x_val,
+                "P(Δx)": h_val,
+                "gaussian_fit": g_val
+            })
+
+    plt.yscale("log")  # to change Y to log to highlight tails
+    plt.xlabel("Scaled Δx")
+    plt.ylabel("P(Δx)")
+    plt.title("Van Hove (two-sided) with log-scaled Y and Gaussian fits")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    # plt.savefig("Figure 7: vanhove_scaled_fits.png", dpi=300)
+    # plt.show()
+    # save data as CSV
+    # df = pd.DataFrame(all_data)
+    # df.to_csv("Table 7: vanhove_scaled_fits_data.csv", index=False)
+
+    return all_data
+
+
 # same as above but with log scale + added cage hopping
-def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=100, range_max=10.0):
+def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=100, range_max=10.0):  #already log scale
     all_data = []  # collect for CSV
     plt.figure(figsize=(8, 5))
 
@@ -1497,7 +1563,7 @@ def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=1
     plt.legend()
     plt.grid(True, which="both", ls="--", alpha=0.5)
     plt.tight_layout()
-    plt.savefig("Figure 7: vanhove_log_scaled_fits.png", dpi=300)
+    # plt.savefig("Figure 7: vanhove_log_scaled_fits.png", dpi=300)
 
 
     # plt.show()
@@ -1568,15 +1634,104 @@ def save_van_hove_results(all_data, csv_filename="Table_vanHove.csv", fig_filena
 
 # try change y-axis to log scale (instead of linear) - highlight differences
 
+# copy 
+def save_van_hove_results_abs(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
+    """
+    Save van Hove results from pooled_log_scaled_van_hove_per_lag to CSV and figure.
+    Input:
+        all_data – list of dicts returned from pooled_log_scaled_van_hove_per_lag()
+    """
+    if not all_data:
+        print("No data to save.")
+        return
+
+    # converting to DataFrame
+    df = pd.DataFrame(all_data)
+    df.to_csv(csv_filename, index=False)
+
+    # plot
+    plt.figure(figsize=(8, 5))
+    for lag in sorted(df["lag_time"].unique()):
+        sub = df[df["lag_time"] == lag]
+        plt.plot(sub["bin_center"], sub["P(Δx)"], label=f"Δt = {lag}")
+        plt.plot(sub["bin_center"], sub["gaussian_fit"], '--', label=f"Fit Δt = {lag}, σ≈{sub['gaussian_fit'].std():.2f}")
+
+
+    plt.xlabel("Scaled |Δx|")
+    plt.ylabel("P(|Δx|)")
+    plt.title("Van Hove (log-scaled) with Gaussian fits")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(fig_filename, dpi=300)
+    plt.close()
+
+# copy
+
+def save_van_hove_results_logScaledY(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
+    """
+    Save van Hove results from pooled_log_scaled_van_hove_per_lag to CSV and figure.
+    Input:
+        all_data – list of dicts returned from pooled_log_scaled_van_hove_per_lag()
+    """
+    if not all_data:
+        print("No data to save.")
+        return
+
+    # converting to DataFrame
+    df = pd.DataFrame(all_data)
+    df.to_csv(csv_filename, index=False)
+
+    # plot
+    plt.figure(figsize=(8, 5))
+    for lag in sorted(df["lag_time"].unique()):
+        sub = df[df["lag_time"] == lag]
+        plt.plot(sub["bin_center"], sub["P(Δx)"], label=f"Δt = {lag}")
+        plt.plot(sub["bin_center"], sub["gaussian_fit"], '--', label=f"Fit Δt = {lag}, σ≈{sub['gaussian_fit'].std():.2f}")
+
+    plt.xlabel("Scaled Δx")
+    plt.ylabel("P(Δx), log scaled")
+    plt.title("Van Hove (log-scaled) with Gaussian fits")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(fig_filename, dpi=300)
+    plt.close()
+
+
 # overall
-data, Rg_hoppers, Rg_non_hoppers = pooled_log_scaled_van_hove_per_lag(tracks_filtered) #vanhove data +cagging
+
+# init version
+data, Rg_hoppers, Rg_non_hoppers = linear_pooled_log_scaled_van_hove_per_lag(tracks_filtered) #vanhove data +cagging
 save_van_hove_results(data, csv_filename="Table 7: vanhove_scaled_fits_data.csv", fig_filename="Figure 7: vanhove_scaled_fits.png")
 
-data_single, Rg_hoppers_single, Rg_non_hoppers_single = pooled_log_scaled_van_hove_per_lag(single_trajs)
+data_single, Rg_hoppers_single, Rg_non_hoppers_single = linear_pooled_log_scaled_van_hove_per_lag(single_trajs)
 save_van_hove_results(data_single, csv_filename="Table 12: vanhove_scaled_fits_data_single.csv", fig_filename="Figure 12: vanhove_scaled_fits_single.png")
 
-data_double, Rg_hoppers_double, Rg_non_hoppers_double = pooled_log_scaled_van_hove_per_lag(double_trajs)
+data_double, Rg_hoppers_double, Rg_non_hoppers_double = linear_pooled_log_scaled_van_hove_per_lag(double_trajs)
 save_van_hove_results(data_double, csv_filename="Table 13: vanhove_scaled_fits_data_double.csv", fig_filename="Figure 13: vanhove_scaled_fits_double.png")
+
+
+# log-log for the one side VanHove
+data, Rg_hoppers, Rg_non_hoppers = pooled_log_scaled_van_hove_per_lag(tracks_filtered) #vanhove data +cagging
+save_van_hove_results(data, csv_filename="Table 29: log-log_1side_vanhove_scaled_fits_data.csv", fig_filename="Figure 29: vanhove_scaled_fits.png")
+
+data_single, Rg_hoppers_single, Rg_non_hoppers_single = pooled_log_scaled_van_hove_per_lag(single_trajs)
+save_van_hove_results(data_single, csv_filename="Table 30: log-log_1side_vanhove_scaled_fits_data_single.csv", fig_filename="Figure 30: vanhove_scaled_fits_single.png")
+
+data_double, Rg_hoppers_double, Rg_non_hoppers_double = pooled_log_scaled_van_hove_per_lag(double_trajs)
+save_van_hove_results(data_double, csv_filename="Table 31: log-log_1side_vanhove_scaled_fits_data_double.csv", fig_filename="Figure 31: vanhove_scaled_fits_double.png")
+
+
+# log-linear for the two side VanHove
+data, Rg_hoppers, Rg_non_hoppers = linearLog_pooled_log_scaled_van_hove_per_lag(tracks_filtered) #vanhove data +cagging
+save_van_hove_results(data, csv_filename="Table 32: log-linear_2side_vanhove_scaled_fits_data.csv", fig_filename="Figure 32: vanhove_scaled_fits.png")
+
+data_single, Rg_hoppers_single, Rg_non_hoppers_single = linearLog_pooled_log_scaled_van_hove_per_lag(single_trajs)
+save_van_hove_results(data_single, csv_filename="Table 33: log-linear_2side_vanhove_scaled_fits_data_single.csv", fig_filename="Figure 33: vanhove_scaled_fits_single.png")
+
+data_double, Rg_hoppers_double, Rg_non_hoppers_double = linearLog_pooled_log_scaled_van_hove_per_lag(double_trajs)
+save_van_hove_results(data_double, csv_filename="Table 34: log-linear_2side_vanhove_scaled_fits_data_double.csv", fig_filename="Figure 34: vanhove_scaled_fits_double.png")
 
 
 def save_rg_classified_tracks_to_csv(Rg_hoppers, Rg_non_hoppers, output_prefix="RgClassified", number=1):
@@ -1779,7 +1934,6 @@ def compute_gamma_rg_from_group(group_tracks, time_step=0.025, seg_size=10):
     # to compute MSD mean across individual trajectories !!!!!!!!!
     skipped = 0
     msd_sum = []  # storage
-    skipped = 0
 
     for i, traj in enumerate(group_tracks):
         # Convert frame index to time using frame column (3rd column) and scale
@@ -1912,7 +2066,7 @@ def plot_and_save_gamma_rg_results(gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ens
     plt.ylabel('γ (Non-ergodicity parameter)')
     plt.title(f'γ vs Lag Time ({prefix})')
     plt.xscale('log')
-    plt.yscale('log')
+    plt.yscale('log') #remove this log scale
     plt.grid(True, which="both", ls="--", alpha=0.5)
     plt.legend()
     plt.tight_layout()
