@@ -1702,13 +1702,13 @@ def save_van_hove_results_logScaledY(all_data, csv_filename="Table_vanHove.csv",
 # overall
 
 # init version
-data, Rg_hoppers, Rg_non_hoppers = linear_pooled_log_scaled_van_hove_per_lag(tracks_filtered) #vanhove data +cagging
+data, _, _ = linear_pooled_log_scaled_van_hove_per_lag(tracks_filtered) #vanhove data +cagging
 save_van_hove_results(data, csv_filename="Table 7: vanhove_scaled_fits_data.csv", fig_filename="Figure 7: vanhove_scaled_fits.png")
 
-data_single, Rg_hoppers_single, Rg_non_hoppers_single = linear_pooled_log_scaled_van_hove_per_lag(single_trajs)
+data_single, _, _ = linear_pooled_log_scaled_van_hove_per_lag(single_trajs)
 save_van_hove_results(data_single, csv_filename="Table 12: vanhove_scaled_fits_data_single.csv", fig_filename="Figure 12: vanhove_scaled_fits_single.png")
 
-data_double, Rg_hoppers_double, Rg_non_hoppers_double = linear_pooled_log_scaled_van_hove_per_lag(double_trajs)
+data_double, _, _ = linear_pooled_log_scaled_van_hove_per_lag(double_trajs)
 save_van_hove_results(data_double, csv_filename="Table 13: vanhove_scaled_fits_data_double.csv", fig_filename="Figure 13: vanhove_scaled_fits_double.png")
 
 
@@ -1724,13 +1724,13 @@ save_van_hove_results(data_double, csv_filename="Table 31: log-log_1side_vanhove
 
 
 # log-linear for the two side VanHove
-data, Rg_hoppers, Rg_non_hoppers = linearLog_pooled_log_scaled_van_hove_per_lag(tracks_filtered) #vanhove data +cagging
+data, _, _ = linearLog_pooled_log_scaled_van_hove_per_lag(tracks_filtered) #vanhove data +cagging
 save_van_hove_results(data, csv_filename="Table 32: log-linear_2side_vanhove_scaled_fits_data.csv", fig_filename="Figure 32: vanhove_scaled_fits.png")
 
-data_single, Rg_hoppers_single, Rg_non_hoppers_single = linearLog_pooled_log_scaled_van_hove_per_lag(single_trajs)
+data_single, _, _ = linearLog_pooled_log_scaled_van_hove_per_lag(single_trajs)
 save_van_hove_results(data_single, csv_filename="Table 33: log-linear_2side_vanhove_scaled_fits_data_single.csv", fig_filename="Figure 33: vanhove_scaled_fits_single.png")
 
-data_double, Rg_hoppers_double, Rg_non_hoppers_double = linearLog_pooled_log_scaled_van_hove_per_lag(double_trajs)
+data_double, _, _ = linearLog_pooled_log_scaled_van_hove_per_lag(double_trajs)
 save_van_hove_results(data_double, csv_filename="Table 34: log-linear_2side_vanhove_scaled_fits_data_double.csv", fig_filename="Figure 34: vanhove_scaled_fits_double.png")
 
 
