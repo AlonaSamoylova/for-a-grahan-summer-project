@@ -1632,8 +1632,7 @@ def save_van_hove_results(all_data, csv_filename="Table_vanHove.csv", fig_filena
     plt.savefig(fig_filename, dpi=300)
     plt.close()
 
-def save_van_hove_results_abs(all_data, csv_filename="Table_vanHove.csv",
-                          fig_filename="Figure_vanHove.png"):
+def save_van_hove_results_abs(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
     """
     Replot Van Hove from pooled_log_scaled_van_hove_per_lag() to match its log–log look.
     - Sorts by (lag_time, bin_center)
@@ -1644,11 +1643,7 @@ def save_van_hove_results_abs(all_data, csv_filename="Table_vanHove.csv",
         print("No data to save.")
         return
 
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
-
-    # Convert and sort (ensures smooth lines)
+    # to convert and sort (ensures smooth lines)
     df = pd.DataFrame(all_data).copy()
     pcol = "P(Δx)" if "P(Δx)" in df.columns else ("P(|Δx|)" if "P(|Δx|)" in df.columns else None)
     if pcol is None:
@@ -1688,7 +1683,7 @@ def save_van_hove_results_abs(all_data, csv_filename="Table_vanHove.csv",
                 # silently skip if fitting fails
                 pass
 
-    # Match the pooled function's styling
+    # to match the pooled function's styling
     plt.xscale("log")
     plt.yscale("log")
     plt.xlabel("Scaled |Δx|")
@@ -1735,32 +1730,65 @@ def save_van_hove_results_abs(all_data, csv_filename="Table_vanHove.csv",
 
 # copy
 
+# def save_van_hove_results_logScaledY(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
+#     """
+#     Save van Hove results from pooled_log_scaled_van_hove_per_lag to CSV and figure.
+#     Input:
+#         all_data – list of dicts returned from pooled_log_scaled_van_hove_per_lag()
+#     """
+#     if not all_data:
+#         print("No data to save.")
+#         return
+
+#     # converting to DataFrame
+#     df = pd.DataFrame(all_data)
+#     df.to_csv(csv_filename, index=False)
+
+#     # plot
+#     plt.figure(figsize=(8, 5))
+#     for lag in sorted(df["lag_time"].unique()):
+#         sub = df[df["lag_time"] == lag]
+#         plt.plot(sub["bin_center"], sub["P(Δx)"], label=f"Δt = {lag}")
+#         plt.plot(sub["bin_center"], sub["gaussian_fit"], '--', label=f"Fit Δt = {lag}, σ≈{sub['gaussian_fit'].std():.2f}")
+
+#     plt.xlabel("Scaled Δx")
+#     plt.ylabel("P(Δx), log scaled")
+#     plt.title("Van Hove (log-scaled) with Gaussian fits")
+#     plt.legend()
+#     plt.grid(True)
+#     plt.tight_layout()
+#     plt.savefig(fig_filename, dpi=300)
+#     plt.close()
+
 def save_van_hove_results_logScaledY(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
     """
-    Save van Hove results from pooled_log_scaled_van_hove_per_lag to CSV and figure.
-    Input:
-        all_data – list of dicts returned from pooled_log_scaled_van_hove_per_lag()
+    Save and replot two-sided Van Hove with log-scaled Y axis.
     """
     if not all_data:
         print("No data to save.")
         return
-
-    # converting to DataFrame
-    df = pd.DataFrame(all_data)
+    
+    df = pd.DataFrame(all_data).sort_values(["lag_time", "bin_center"])
     df.to_csv(csv_filename, index=False)
 
-    # plot
     plt.figure(figsize=(8, 5))
-    for lag in sorted(df["lag_time"].unique()):
-        sub = df[df["lag_time"] == lag]
-        plt.plot(sub["bin_center"], sub["P(Δx)"], label=f"Δt = {lag}")
-        plt.plot(sub["bin_center"], sub["gaussian_fit"], '--', label=f"Fit Δt = {lag}, σ≈{sub['gaussian_fit'].std():.2f}")
+    for lag, sub in df.groupby("lag_time"):
+        x = sub["bin_center"].to_numpy()
+        y = np.clip(sub["P(Δx)"].to_numpy(), 1e-12, None)
 
-    plt.xlabel("Scaled Δx")
-    plt.ylabel("P(Δx), log scaled")
-    plt.title("Van Hove (log-scaled) with Gaussian fits")
+        plt.plot(x, y, label=f"Δt = {int(lag)}")
+        if "gaussian_fit" in sub.columns:
+            g = np.clip(sub["gaussian_fit"].to_numpy(), 1e-12, None)
+            sigma = sub["sigma"].iloc[0] if "sigma" in sub else np.nan
+            fit_label = f"Fit Δt = {int(lag)}, σ={sigma:.2f}" if not np.isnan(sigma) else f"Fit Δt = {int(lag)}"
+            plt.plot(x, g, "--", label=fit_label)
+
+    plt.yscale("log")  # only Y axis log
+    plt.xlabel("Scaled Δx (signed)")
+    plt.ylabel("P(Δx)")
+    plt.title("Van Hove (two-sided) with log-scaled Y and Gaussian fits")
     plt.legend()
-    plt.grid(True)
+    plt.grid(True, which="both", ls="--", alpha=0.5)
     plt.tight_layout()
     plt.savefig(fig_filename, dpi=300)
     plt.close()
