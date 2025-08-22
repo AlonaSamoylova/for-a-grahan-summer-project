@@ -1540,33 +1540,57 @@ def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=1
         bin_edges = np.logspace(np.log10(min_nonzero), np.log10(max_abs_dx), bins + 1)
         bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
 
-        hist, _ = np.histogram(all_scaled_dx, bins=bin_edges, density=True)
-        H, A, mu, sigma = gauss_fit(bin_centers, hist) #may not be gaussioan anymore -> because 
-        gauss_curve = gauss(bin_centers, H, A, mu, sigma)
+    #     hist, _ = np.histogram(all_scaled_dx, bins=bin_edges, density=True)
+    #     H, A, mu, sigma = gauss_fit(bin_centers, hist) #may not be gaussioan anymore -> because 
+    #     gauss_curve = gauss(bin_centers, H, A, mu, sigma)
 
-        plt.plot(bin_centers, hist, label=f"Δt = {lag}")
-        plt.plot(bin_centers, gauss_curve, '--', label=f"Fit Δt = {lag}, σ={sigma:.2f}")
+    #     plt.plot(bin_centers, hist, label=f"Δt = {lag}")
+    #     plt.plot(bin_centers, gauss_curve, '--', label=f"Fit Δt = {lag}, σ={sigma:.2f}")
 
-        for x_val, h_val, g_val in zip(bin_centers, hist, gauss_curve):
-            all_data.append({
-                "lag_time": lag,
-                "bin_center": x_val,
-                "P(Δx)": h_val,
-                "gaussian_fit": g_val
-            })
+    #     for x_val, h_val, g_val in zip(bin_centers, hist, gauss_curve):
+    #         all_data.append({
+    #             "lag_time": lag,
+    #             "bin_center": x_val,
+    #             "P(Δx)": h_val,
+    #             "gaussian_fit": g_val
+    #         })
 
-    plt.xscale("log")
-    plt.yscale("log")
-    plt.xlabel("Scaled |Δx|")
-    plt.ylabel("P(|Δx|)")
-    plt.title("Van Hove (log-log) per lag with Gaussian fits")
-    plt.legend()
-    plt.grid(True, which="both", ls="--", alpha=0.5)
-    plt.tight_layout()
-    # plt.savefig("Figure 7: vanhove_log_scaled_fits.png", dpi=300)
+    # plt.xscale("log")
+    # plt.yscale("log")
+    # plt.xlabel("Scaled |Δx|")
+    # plt.ylabel("P(|Δx|)")
+    # plt.title("Van Hove (log-log) per lag with Gaussian fits")
+    # plt.legend()
+    # plt.grid(True, which="both", ls="--", alpha=0.5)
+    # plt.tight_layout()
+    # # plt.savefig("Figure 7: vanhove_log_scaled_fits.png", dpi=300)
 
 
     # plt.show()
+
+
+    # add sigma into all_data, sort bins  as before, + (opt. additional) eps clip
+    eps = 1e-12
+    hist, _ = np.histogram(all_scaled_dx, bins=bin_edges, density=True)
+    H, A, mu, sigma = gauss_fit(bin_centers, hist)
+    gauss_curve = gauss(bin_centers, H, A, mu, sigma)
+
+    # avoid zeros on log axes
+    hist = np.clip(hist, eps, None)
+    gauss_curve = np.clip(gauss_curve, eps, None)
+
+    plt.plot(bin_centers, hist, label=f"Δt = {lag}")
+    plt.plot(bin_centers, gauss_curve, '--', label=f"Fit Δt = {lag}, σ={sigma:.2f}")
+
+    for x_val, h_val, g_val in zip(bin_centers, hist, gauss_curve):
+        all_data.append({
+            "lag_time": int(lag),
+            "bin_center": float(x_val),
+            "P(Δx)": float(h_val),          
+            "gaussian_fit": float(g_val),
+            "sigma": float(sigma)           # New: persist the fitted sigma
+        })
+
 
     # save data as CSV
 
@@ -1631,6 +1655,42 @@ def save_van_hove_results(all_data, csv_filename="Table_vanHove.csv", fig_filena
     plt.tight_layout()
     plt.savefig(fig_filename, dpi=300)
     plt.close()
+
+def save_van_hove_results(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
+    if not all_data:
+        print("No data to save.")
+        return
+
+    df = pd.DataFrame(all_data)
+
+    # to ensure smooth lines by sorting within each lag
+    df = df.sort_values(["lag_time", "bin_center"])
+    df.to_csv(csv_filename, index=False)
+
+    plt.figure(figsize=(8, 5))
+    for lag, sub in df.groupby("lag_time"):
+        # sub is already sorted by the line above
+        plt.plot(sub["bin_center"], sub["P(Δx)"], label=f"Δt = {int(lag)}")
+        if "gaussian_fit" in sub.columns:
+            if "sigma" in sub.columns and not pd.isna(sub["sigma"].iloc[0]):
+                fit_label = f"Fit Δt = {int(lag)}, σ={sub['sigma'].iloc[0]:.2f}"
+            else:
+                fit_label = f"Fit Δt = {int(lag)}"
+            plt.plot(sub["bin_center"], sub["gaussian_fit"], '--', label=fit_label)
+
+    # to match the in-function plot style (this was the main cause of the difference)
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xlabel("Scaled |Δx|")
+    plt.ylabel("P(|Δx|)")
+    plt.title("Van Hove (log-log) per lag with Gaussian fits")
+    plt.legend()
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.tight_layout()
+    plt.savefig(fig_filename, dpi=300)
+    plt.close()
+ 
+
 
 # try change y-axis to log scale (instead of linear) - highlight differences
 
