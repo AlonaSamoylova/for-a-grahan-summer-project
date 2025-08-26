@@ -1696,70 +1696,6 @@ def save_van_hove_results_abs(all_data, csv_filename="Table_vanHove.csv", fig_fi
     plt.close()
 # try change y-axis to log scale (instead of linear) - highlight differences
 
-# # copy 
-# def save_van_hove_results_abs(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
-#     """
-#     Save van Hove results from pooled_log_scaled_van_hove_per_lag to CSV and figure.
-#     Input:
-#         all_data – list of dicts returned from pooled_log_scaled_van_hove_per_lag()
-#     """
-#     if not all_data:
-#         print("No data to save.")
-#         return
-
-#     # converting to DataFrame
-#     df = pd.DataFrame(all_data)
-#     df.to_csv(csv_filename, index=False)
-
-#     # plot
-#     plt.figure(figsize=(8, 5))
-#     for lag in sorted(df["lag_time"].unique()):
-#         sub = df[df["lag_time"] == lag]
-#         plt.plot(sub["bin_center"], sub["P(Δx)"], label=f"Δt = {lag}")
-#         plt.plot(sub["bin_center"], sub["gaussian_fit"], '--', label=f"Fit Δt = {lag}, σ≈{sub['gaussian_fit'].std():.2f}")
-
-
-#     plt.xlabel("Scaled |Δx|")
-#     plt.ylabel("P(|Δx|)")
-#     plt.title("Van Hove (log-scaled) with Gaussian fits")
-#     plt.legend()
-#     plt.grid(True)
-#     plt.tight_layout()
-#     plt.savefig(fig_filename, dpi=300)
-#     plt.close()
-
-# copy
-
-# def save_van_hove_results_logScaledY(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
-#     """
-#     Save van Hove results from pooled_log_scaled_van_hove_per_lag to CSV and figure.
-#     Input:
-#         all_data – list of dicts returned from pooled_log_scaled_van_hove_per_lag()
-#     """
-#     if not all_data:
-#         print("No data to save.")
-#         return
-
-#     # converting to DataFrame
-#     df = pd.DataFrame(all_data)
-#     df.to_csv(csv_filename, index=False)
-
-#     # plot
-#     plt.figure(figsize=(8, 5))
-#     for lag in sorted(df["lag_time"].unique()):
-#         sub = df[df["lag_time"] == lag]
-#         plt.plot(sub["bin_center"], sub["P(Δx)"], label=f"Δt = {lag}")
-#         plt.plot(sub["bin_center"], sub["gaussian_fit"], '--', label=f"Fit Δt = {lag}, σ≈{sub['gaussian_fit'].std():.2f}")
-
-#     plt.xlabel("Scaled Δx")
-#     plt.ylabel("P(Δx), log scaled")
-#     plt.title("Van Hove (log-scaled) with Gaussian fits")
-#     plt.legend()
-#     plt.grid(True)
-#     plt.tight_layout()
-#     plt.savefig(fig_filename, dpi=300)
-#     plt.close()
-
 def save_van_hove_results_logScaledY(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
     """
     Save and replot two-sided Van Hove with log-scaled Y axis.
@@ -1840,12 +1776,24 @@ def save_rg_classified_tracks_to_csv(Rg_hoppers, Rg_non_hoppers, output_prefix="
     """
     def make_df(rg_list, label):
         records = []
-        for traj_id, rg_traj in enumerate(rg_list):
-            for frame, rg_val in enumerate(rg_traj):
+        for traj_id, xy in enumerate(rg_list): #rg_traj is (N,2) or (N,>=2) with [x,y,(t)] =>xy
+            # for frame, rg_val in enumerate(rg_traj):
+            #     records.append({
+            #         "trajectory_id": traj_id,
+            #         "frame": frame,
+            #         "Rg": rg_val,
+            #         "class": label
+            #     })
+            x = xy[:, 0]
+            y = xy[:, 1]
+            t = xy[:, 2] if xy.shape[1] >= 3 else np.arange(len(x))
+            for frame, (ti, xi, yi) in enumerate(zip(t, x, y)):
                 records.append({
                     "trajectory_id": traj_id,
                     "frame": frame,
-                    "Rg": rg_val,
+                    "time": float(ti),
+                    "x": float(xi),
+                    "y": float(yi),
                     "class": label
                 })
         return pd.DataFrame(records)
