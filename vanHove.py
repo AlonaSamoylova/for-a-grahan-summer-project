@@ -2188,12 +2188,11 @@ def pack(range_max=10.0, seg_size=10, k=2.0, return_plot_samples=True, n_plot_ea
 # opt. diagnostics, may be useful -> skipped, too much trouble (but considered using dbscan for cages)
 
 # plotting from pack
-def plot_from_pack_simple(plot_pack, outdir="figs_traj_simple", max_per_group=None, prefix="traj"):
+def plot_from_pack_simple(plot_pack, max_per_group=None, prefix="traj"):
     """
     Minimal plotting: for each group in plot_pack, save XY path colored by time.
     Files:{group}_{cls}_{idx:03d}.png
     """
-    os.makedirs(outdir, exist_ok=True)
 
     groups = [
         ("all",    "hopper",     plot_pack.get("hoppers", [])),
@@ -2235,7 +2234,97 @@ def plot_from_pack_simple(plot_pack, outdir="figs_traj_simple", max_per_group=No
             plt.close()
 
 
+def plot_from_pack_simple_v2(
+    plot_pack,
+    max_per_group=None,
+    prefix="traj",
+    seg_size=10,          # for boundary markers in variant B
+    line_alpha=0.5,       # line transparency (variant B)
+    line_lw=0.8,          # line width (variant B)
+    boundary_every=1,     # label every k-th boundary (variant B)
+    start_N=35            # starting figure counter to match naming
+):
+    """
+    For each group in plot_pack, save two files per trajectory:
+      A) Figure {N}_CageHoppersExamples_{prefix}_{group}_{cls}_{idx:03d}_scatter.png
+      B) Figure {N+1}_CageHoppersExamples_{prefix}_{group}_{cls}_{idx:03d}_scatter_line_segments.png
+    """
+
+    groups = [
+        ("all",    "hopper",     plot_pack.get("hoppers", [])),
+        ("all",    "nonhopper",  plot_pack.get("nonhoppers", [])),
+        ("single", "hopper",     plot_pack.get("hoppers_single", [])),
+        ("single", "nonhopper",  plot_pack.get("nonhoppers_single", [])),
+        ("double", "hopper",     plot_pack.get("hoppers_double", [])),
+        ("double", "nonhopper",  plot_pack.get("nonhoppers_double", [])),
+    ]
+
+    N = start_N
+
+    for group_label, cls_label, traj_list in groups:
+        if not traj_list:
+            print(f"[skip] {group_label}/{cls_label}: none in pack")
+            continue
+
+        use_list = traj_list[:max_per_group] if (max_per_group is not None) else traj_list
+        print(f"[plot] {group_label}/{cls_label}: {len(use_list)} sample(s)")
+
+        for i, traj in enumerate(use_list):
+            xy = traj[:, :2]
+            t  = traj[:, 2] if traj.shape[1] >= 3 else np.arange(traj.shape[0])
+            rel = np.linspace(0, 1, len(xy))
+
+            # Variant A: scatter only
+            plt.figure(figsize=(5, 5))
+            sc = plt.scatter(xy[:,0], xy[:,1], c=rel, s=6, cmap="viridis")
+            plt.plot([xy[0,0]], [xy[0,1]], 'o', ms=6, label='start')
+            plt.plot([xy[-1,0]], [xy[-1,1]], 's', ms=6, label='end')
+            plt.gca().set_aspect('equal', adjustable='datalim')
+            plt.xlabel('x'); plt.ylabel('y')
+            plt.title(f'{group_label} / {cls_label}')
+            cb = plt.colorbar(sc, fraction=0.046, pad=0.02); cb.set_label('relative time')
+            plt.legend(fontsize=8); plt.tight_layout()
+
+            fnameA = f"Figure {N}_CageHoppersExamples_{prefix}_{group_label}_{cls_label}_{i:03d}_scatter.png"
+            plt.savefig(fnameA, dpi=300, bbox_inches="tight")
+            plt.close()
+            N += 1
+
+            # Variant B: scatter + thin line + segment boundaries
+            plt.figure(figsize=(5, 5))
+            sc = plt.scatter(xy[:,0], xy[:,1], c=rel, s=6, cmap="viridis")
+            plt.plot(xy[:,0], xy[:,1], '-', lw=line_lw, alpha=line_alpha)  # path line
+            plt.plot([xy[0,0]], [xy[0,1]], 'o', ms=6, label='start')
+            plt.plot([xy[-1,0]], [xy[-1,1]], 's', ms=6, label='end')
+
+            # segment boundaries (every seg_size)
+            if seg_size and seg_size > 0 and len(xy) > seg_size:
+                bounds = np.arange(seg_size, len(xy), seg_size)
+                plt.scatter(xy[bounds,0], xy[bounds,1], s=24,
+                            facecolors='none', edgecolors='k', linewidths=0.8,
+                            label='segment boundary')
+                if boundary_every >= 1:
+                    for k, idx_b in enumerate(bounds):
+                        if (k % boundary_every) != 0:
+                            continue
+                        plt.annotate(str(k+1), (xy[idx_b,0], xy[idx_b,1]),
+                                     textcoords="offset points", xytext=(2,2),
+                                     fontsize=7, alpha=0.7)
+
+            plt.gca().set_aspect('equal', adjustable='datalim')
+            plt.xlabel('x'); plt.ylabel('y')
+            plt.title(f'{group_label} / {cls_label} (line + segment boundaries)')
+            cb = plt.colorbar(sc, fraction=0.046, pad=0.02); cb.set_label('relative time')
+            plt.legend(fontsize=8); plt.tight_layout()
+
+            fnameB = f"Figure {N}_CageHoppersExamples_{prefix}_{group_label}_{cls_label}_{i:03d}_scatter_line_segments.png"
+            plt.savefig(fnameB, dpi=300, bbox_inches="tight")
+            plt.close()
+            N += 1
+
+
+
 pp = pack(seg_size=10, k=2.0, n_plot_each=3, seed=0)   #sampler
-plot_from_pack_simple(pp, outdir="figs_traj_simple", max_per_group=3, prefix="traj")
+plot_from_pack_simple_v2(pp, outdir="figs_traj_simple", max_per_group=3, prefix="traj")
 
 print(f"Total time: {time.time() - global_start:.2f}s")
