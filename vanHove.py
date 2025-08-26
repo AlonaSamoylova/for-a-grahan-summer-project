@@ -1374,7 +1374,7 @@ def convert_tracks_to_df(tracks):
 # van hove for x, custom
 tracks_filtered, single_trajs, double_trajs = CalcMSD(path)
 
-def linear_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=100, range_max=10.0): #15,30,46
+def linear_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=400, range_max=15.0): #15,30,46
     # tracks = CalcMSD(path)
     bin_edges = np.linspace(-range_max, range_max, bins + 1)
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
@@ -1438,7 +1438,7 @@ def linear_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100],
 
 
 # log-linear for the two side VanHove; nearly same as above
-def linearLog_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=100, range_max=10.0): #15,30,46
+def linearLog_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 30, 100], bins=400, range_max=15.0): #15,30,46  #used to be bins=100, range_max=10.0; increased to 400 and 15 to see fat tails
     # tracks = CalcMSD(path)
     bin_edges = np.linspace(-range_max, range_max, bins + 1)
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
