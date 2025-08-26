@@ -2325,6 +2325,6 @@ def plot_from_pack_simple_v2(
 
 
 pp = pack(seg_size=10, k=2.0, n_plot_each=3, seed=0)   #sampler
-plot_from_pack_simple_v2(pp, outdir="figs_traj_simple", max_per_group=3, prefix="traj")
+plot_from_pack_simple_v2(pp, max_per_group=3, prefix="traj")
 
 print(f"Total time: {time.time() - global_start:.2f}s")
