@@ -8,6 +8,8 @@ import seaborn as sns
 from scipy.ndimage import gaussian_filter1d #to smooth the slope derivative -> can help with 'turning point towards end' problem
 # import trackpy as tp #for van hove correlation; to compare with custom variant
 from scipy.stats import norm #gaussian fit
+import random #to pick random traj from non/hoppers
+
 
 global_start = time.time()
 # new helper functions to find better fit:
@@ -2149,5 +2151,91 @@ plot_and_save_gamma_rg_results(gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensembl
 # double
 gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask = compute_gamma_rg_from_group(double_trajs, time_step=0.025, seg_size=10)
 plot_and_save_gamma_rg_results(gamma, gamma_v2, Rg_all, Rg_seg_flat, msd_ensemble_mean, msd_mean, lag_times, valid_mask, prefix = "double", N = 17)
+
+# plotting random hoppers/nonhoppers
+# creating plot pack, i am using global storages from above so no additional param. needed
+def pack(range_max=10.0, seg_size=10, k=2.0, return_plot_samples=True, n_plot_each=3, seed=0):
+    rng = random.Random(seed)
+    # pick a few samples from each class (if they exist)
+
+    # sample safely from each pool
+    def pick(lst):
+        return rng.sample(lst, min(n_plot_each, len(lst))) if lst else []
+
+    h_samples         = pick(Rg_hoppers)
+    n_samples         = pick(Rg_non_hoppers)
+    h_single_samples  = pick(Rg_hoppers_single)        # fixed: length of *_single
+    n_single_samples  = pick(Rg_non_hoppers_single)
+    h_double_samples  = pick(Rg_hoppers_double)
+    n_double_samples  = pick(Rg_non_hoppers_double)
+
+    # store everything needed to plot later
+    plot_pack = {
+            "seg_size": seg_size,
+            "k": k,
+            "hoppers": h_samples,        # list of arrays (N,2) or (N,>=3)
+            "nonhoppers": n_samples,     # list of arrays
+            "hoppers_single": h_single_samples,        # list of arrays (N,2) or (N,>=3)
+            "nonhoppers_single": n_single_samples,     # list of arrays
+            "hoppers_double": h_double_samples,        # list of arrays (N,2) or (N,>=3)
+            "nonhoppers_double": n_double_samples,     # list of arrays
+
+        }
+    
+    return plot_pack
+
+
+# opt. diagnostics, may be useful -> skipped, too much trouble (but considered using dbscan for cages)
+
+# plotting from pack
+def plot_from_pack_simple(plot_pack, outdir="figs_traj_simple", max_per_group=None, prefix="traj"):
+    """
+    Minimal plotting: for each group in plot_pack, save XY path colored by time.
+    Files:{group}_{cls}_{idx:03d}.png
+    """
+    os.makedirs(outdir, exist_ok=True)
+
+    groups = [
+        ("all",    "hopper",     plot_pack.get("hoppers", [])),
+        ("all",    "nonhopper",  plot_pack.get("nonhoppers", [])),
+        ("single", "hopper",     plot_pack.get("hoppers_single", [])),
+        ("single", "nonhopper",  plot_pack.get("nonhoppers_single", [])),
+        ("double", "hopper",     plot_pack.get("hoppers_double", [])),
+        ("double", "nonhopper",  plot_pack.get("nonhoppers_double", [])),
+    ]
+
+    for group_label, cls_label, traj_list in groups:
+        if not traj_list:
+            print(f"[skip] {group_label}/{cls_label}: none in pack")
+            continue
+
+        use_list = traj_list[:max_per_group] if (max_per_group is not None) else traj_list
+        print(f"[plot] {group_label}/{cls_label}: {len(use_list)} sample(s)")
+
+        N = 35
+
+        for i, traj in enumerate(use_list):
+            xy = traj[:, :2]
+            t  = traj[:, 2] if traj.shape[1] >= 3 else np.arange(traj.shape[0])
+
+            plt.figure(figsize=(5, 5))
+            sc = plt.scatter(xy[:,0], xy[:,1], c=np.linspace(0,1,len(xy)), s=6, cmap="viridis")
+            plt.plot([xy[0,0]], [xy[0,1]], 'o', ms=6, label='start')
+            plt.plot([xy[-1,0]], [xy[-1,1]], 's', ms=6, label='end')
+            plt.gca().set_aspect('equal', adjustable='datalim')
+            plt.xlabel('x'); plt.ylabel('y')
+            plt.title(f'{group_label} / {cls_label}')
+            cb = plt.colorbar(sc, fraction=0.046, pad=0.02); cb.set_label('relative time')
+            plt.legend(fontsize=8)
+            plt.tight_layout()
+
+            fname = f"Figure {N}_CageHoppersExamples_{prefix}_{group_label}_{cls_label}_{i:03d}.png"
+            N+=1
+            plt.savefig(fname, dpi=300, bbox_inches="tight")
+            plt.close()
+
+
+pp = pack(seg_size=10, k=2.0, n_plot_each=3, seed=0)   #sampler
+plot_from_pack_simple(pp, outdir="figs_traj_simple", max_per_group=3, prefix="traj")
 
 print(f"Total time: {time.time() - global_start:.2f}s")
