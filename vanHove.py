@@ -456,6 +456,50 @@ def MSD_exp_twostep(msd_temp, turning_pt):
 
     return (slope1, intercept1), (slope2, intercept2)
 
+#  helper: log-binning on τ (frames); to make msd fit look better with more data
+def log_bin_tau(tau, y, weights, bins_per_decade=10, min_pts=3, keep_first=2):
+    tau = np.asarray(tau, float)
+    y   = np.asarray(y,   float)
+    w   = np.asarray(weights, float)
+    m = np.isfinite(tau) & np.isfinite(y) & np.isfinite(w) & (tau > 0) & (w > 0)
+    tau, y, w = tau[m], y[m], w[m]
+    # keep the first few small-τ points unbinned
+    order = np.argsort(tau)
+    tau, y, w = tau[order], y[order], w[order]
+    keep = min(keep_first, len(tau))
+    tau_keep, y_keep, w_keep = tau[:keep], y[:keep], w[:keep]
+    tau_rest, y_rest, w_rest = tau[keep:], y[keep:], w[keep:]
+    if len(tau_rest) == 0:
+        return tau_keep, y_keep, w_keep, np.zeros_like(y_keep)
+
+    tmin, tmax = float(np.min(tau_rest)), float(np.max(tau_rest))
+    if tmin <= 0 or tmax <= tmin:
+        return tau_keep, y_keep, w_keep, np.zeros_like(y_keep)
+    decades = np.log10(tmax) - np.log10(tmin)
+    nbins = max(int(np.ceil(decades * bins_per_decade)), 1)
+    edges = np.logspace(np.log10(tmin), np.log10(tmax), nbins + 1)
+
+    idx = np.digitize(tau_rest, edges) - 1
+    T, Y, W, SE = [], [], [], []
+    for b in range(nbins):
+        sel = (idx == b)
+        if np.sum(sel) < min_pts:
+            continue
+        tb, yb, wb = tau_rest[sel], y_rest[sel], w_rest[sel]
+        wsum = np.sum(wb)
+        ybar = np.sum(wb * yb) / wsum
+        trep = np.exp(np.mean(np.log(tb)))           # geometric mean lag
+        var = np.sum(wb * (yb - ybar)**2) / (wsum**2)
+        se = float(np.sqrt(var))                     # SE of weighted mean (approx)
+        T.append(trep); Y.append(ybar); W.append(wsum); SE.append(se)
+
+    tau_b = np.concatenate([tau_keep, np.array(T)])
+    y_b   = np.concatenate([y_keep,   np.array(Y)])
+    w_b   = np.concatenate([w_keep,   np.array(W)])
+    se_b  = np.concatenate([np.zeros_like(y_keep), np.array(SE)])
+    order2 = np.argsort(tau_b)
+    return tau_b[order2], y_b[order2], w_b[order2], se_b[order2]
+
 
 # main function;
 # to process and analyze track data
@@ -694,6 +738,21 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     time_valid = t_clean[cutoff_mask]
     msd_valid = msd_clean[cutoff_mask]
 
+    # FOR LOG BINNING
+    
+    # contributors per lag (how many tracks contributed to each mean)
+    # -> use as weights for binning. Align with 'valid' mask.
+    n_contrib_full = np.sum(~np.isnan(msd_matrix), axis=0)   # shape: (max_length,)
+    n_contrib = n_contrib_full[valid]
+
+    # (optional) apply 1s cutoff for plotting-only views => check next time
+    n_contrib_valid = n_contrib[cutoff_mask]
+
+
+    # to compute binned MSD on τ (still in frames)
+    tau_b, msd_b, w_b, se_b = log_bin_tau(t_clean, msd_clean, n_contrib, bins_per_decade=10, min_pts=3, keep_first=2)
+
+
     #
     # # we're interedsted in everything <= 1s: not were effective as well as if loops, let's edit valid instead
     # mask = time_valid_unfiltered <= 1.0
@@ -726,14 +785,71 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
 
 
+        # NEW: single power-law on the BINNED curve
+    if len(tau_b) >= 2 and np.all(tau_b > 0) and np.all(msd_b > 0):
+        # Straight log–log regression on (tau_b, msd_b)
+        sb, ib = np.polyfit(np.log10(tau_b), np.log10(msd_b), 1)
+        msd_fit_single_binned = 10**ib * (tau_b ** sb)
+    else:
+        sb, ib = np.nan, np.nan
+        msd_fit_single_binned = None
+
+
+    # 2-segment (broken power-law) on the BINNED curve
+    msd_fit_2seg_binned = None
+    popt_2seg_b = None
+    if (msd_fit_single_binned is not None) and (len(tau_b) >= 6):
+        try:
+            # choose a break on the binned series; ensure enough points on both sides
+            # helper find_turning_point, use it on msd_b; otherwise pick mid-index
+            if 'find_turning_point' in globals():
+                break_b = int(find_turning_point(msd_b))
+            else:
+                break_b = len(tau_b) // 2
+
+            # clamp break to have at least 3 points each side (tune later!)
+            break_b = int(np.clip(break_b, 3, len(tau_b) - 3))
+
+            # wrapper using same bkn_pow_2seg signature you already use
+            def fit_wrapper_b(x, A, alpha1, alpha2):
+                return bkn_pow_2seg(x, A, alpha1, alpha2, break_b)[0]
+
+            # initial guess and bounds (matching your raw fit style)
+            A_guess_b = max(np.mean(msd_b[:min(5, len(msd_b))]), 1e-5)
+            initial_guess_b = [A_guess_b, 0.3, 1.0]
+            bounds_2seg_b = ([1e-5, 0.1, 0.1], [10.0, 3.0, 3.0])
+
+            popt_2seg_b, _ = curve_fit(
+                fit_wrapper_b, tau_b, msd_b,
+                p0=initial_guess_b, bounds=bounds_2seg_b, maxfev=20000
+            )
+            msd_fit_2seg_binned = bkn_pow_2seg(tau_b, *popt_2seg_b, break_b)[0]
+
+        except Exception as e:
+            # Not fatal—just skip if binned 2-seg fails
+            msd_fit_2seg_binned = None
+            popt_2seg_b = None
+
 
     # plotting original MSD with fits
-    plt.figure()
+    # plt.figure()
+    figsize=(6, 4.5) #to overlay binned
+
     plt.plot(t_clean * 0.025, msd_fit_2seg, '--', label=f'2-Seg Fit (α₁ ≈ {popt_2seg[1]:.2f}, α₂ ≈ {popt_2seg[2]:.2f})')
 
     plt.plot(t_clean * 0.025, msd_clean, label='Original MSD', color='black')
     plt.plot(t_clean * 0.025, msd_fit_single, '--', label=f'Single Power Law (α ≈ {slope_single:.2f})')
     plt.plot(t_clean * 0.025, msd_fit_2seg, '--', label=f'2-Seg Fit (α₁ ≈ {popt_2seg[1]:.2f}, α₂ ≈ {popt_2seg[2]:.2f})')
+
+
+    # binned points (with tiny error bars) and binned single power-law
+    if msd_fit_single_binned is not None:
+        plt.errorbar(tau_b * 0.025, msd_b, yerr=np.clip(se_b, 0, None), fmt='o', ms=4, capsize=2, label='MSD (log-binned)')
+        plt.plot(tau_b * 0.025, msd_fit_single_binned, '-', lw=1.3, label=f'Single PW (binned) α≈{sb:.2f}')
+
+
+    if msd_fit_2seg_binned is not None:
+        plt.plot(tau_b * 0.025, msd_fit_2seg_binned, '-.', label=f'2-Seg (binned) α₁≈{popt_2seg_b[1]:.2f}, α₂≈{popt_2seg_b[2]:.2f}')
 
     plt.xscale('log')
     plt.yscale('log')
@@ -741,6 +857,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     plt.ylabel('MSD')
     plt.title('MSD Fit Comparison')
     plt.legend()
+    plt.tight_layout()
     plt.savefig("Figure4: msd_fit_comparison.png", dpi=300)
     # plt.show()
 
