@@ -785,7 +785,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
 
 
-        # NEW: single power-law on the BINNED curve
+    # NEW: single power-law on the BINNED curve
     if len(tau_b) >= 2 and np.all(tau_b > 0) and np.all(msd_b > 0):
         # Straight log–log regression on (tau_b, msd_b)
         sb, ib = np.polyfit(np.log10(tau_b), np.log10(msd_b), 1)
@@ -833,7 +833,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
     # plotting original MSD with fits
     # plt.figure()
-    figsize=(6, 4.5) #to overlay binned
+    plt.figure(figsize=(6, 4.5)) #to overlay binned
 
     plt.plot(t_clean * 0.025, msd_fit_2seg, '--', label=f'2-Seg Fit (α₁ ≈ {popt_2seg[1]:.2f}, α₂ ≈ {popt_2seg[2]:.2f})')
 
