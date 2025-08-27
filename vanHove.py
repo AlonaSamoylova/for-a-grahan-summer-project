@@ -753,18 +753,35 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     tau_b, msd_b, w_b, se_b = log_bin_tau(t_clean, msd_clean, n_contrib, bins_per_decade=10, min_pts=3, keep_first=2)
 
 
-    #
-    # # we're interedsted in everything <= 1s: not were effective as well as if loops, let's edit valid instead
-    # mask = time_valid_unfiltered <= 1.0
-    # time_valid = time_valid_unfiltered[mask]
-    # msd_valid = msd_valid_unfiltered[mask]  # Filtered to match time_valid
-    
+    # #
+    # # # we're interedsted in everything <= 1s: not were effective as well as if loops, let's edit valid instead
+    # mask = time_valid <= 10.0 #or 1.0
+    # time_valid_new = time_valid[mask]
+    # msd_valid_new = msd_valid[mask]  # Filtered to match time_valid
+
+    # fit only cutoff mask
+
+    FIT_MAX_S = 10.0   # or 1.0 — your choice for the fit-only cutoff
+    fit_mask = (t_clean * 0.025) <= FIT_MAX_S
+
+    # convenience views used ONLY for fitting
+    t_fit   = t_clean[fit_mask]
+    msd_fit = msd_clean[fit_mask]
+        
 
     turning_pt = 30 #for msd two-step (fixed), that's why broken power law with automatic one is better
 
     # single power-law fit
-    slope_single, intercept_single = single_powerlaw_fit(msd_clean)
-    msd_fit_single = 10**intercept_single * (t_clean ** slope_single)
+    # slope_single, intercept_single = single_powerlaw_fit(msd_clean)
+    # msd_fit_single = 10**intercept_single * (t_clean ** slope_single)
+
+
+    # single power-law fit (fit only to early times)
+    slope_single, intercept_single = single_powerlaw_fit(msd_fit)
+
+    # evaluate the model only where we actually fit; NaN elsewhere
+    msd_fit_single = np.full_like(msd_clean, np.nan, dtype=float)
+    msd_fit_single[fit_mask] = (10**intercept_single) * (t_clean[fit_mask] ** slope_single)
 
 
     log_time = np.log10(t_clean)
@@ -772,58 +789,90 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
     # new 2 segment fit:
     # --- 2-segment continuous fit using bkn_pow_2seg ---
-    break1 = find_turning_point(msd_clean)  # automatic turning point
-    A_guess = np.mean(msd_clean[:5])
+    # break1 = find_turning_point(msd_clean)  # automatic turning point
+    # A_guess = np.mean(msd_clean[:5])
+    # initial_guess = [A_guess, 0.3, 1.0]
+    # bounds_2seg = ([1e-5, 0.1, 0.1], [10, 3.0, 3.0])
+
+    # def fit_wrapper(x, A, alpha1, alpha2):
+    #     return bkn_pow_2seg(x, A, alpha1, alpha2, break1)[0]
+
+    # popt_2seg, _ = curve_fit(fit_wrapper, t_clean, msd_clean, p0=initial_guess, bounds=bounds_2seg)
+    # msd_fit_2seg, A2_2seg = bkn_pow_2seg(t_clean, *popt_2seg, break1)
+
+
+    # 2-segment continuous fit using masked early data
+    break1 = find_turning_point(msd_fit)  # pick break on the same early range
+    A_guess = np.nanmean(msd_fit[:5])
     initial_guess = [A_guess, 0.3, 1.0]
     bounds_2seg = ([1e-5, 0.1, 0.1], [10, 3.0, 3.0])
 
     def fit_wrapper(x, A, alpha1, alpha2):
         return bkn_pow_2seg(x, A, alpha1, alpha2, break1)[0]
 
-    popt_2seg, _ = curve_fit(fit_wrapper, t_clean, msd_clean, p0=initial_guess, bounds=bounds_2seg)
-    msd_fit_2seg, A2_2seg = bkn_pow_2seg(t_clean, *popt_2seg, break1)
+    popt_2seg, _ = curve_fit(fit_wrapper, t_fit, msd_fit, p0=initial_guess, bounds=bounds_2seg)
 
+    # store as a full-length series but fill only where we actually fit
+    msd_fit_2seg = np.full_like(msd_clean, np.nan, dtype=float)
+    msd_fit_2seg[fit_mask], A2_2seg = bkn_pow_2seg(t_clean[fit_mask], *popt_2seg, break1)
+
+
+
+    # respect the same cutoff in the binned series
+    b_fit_mask = (tau_b * 0.025) <= FIT_MAX_S
+    tau_b_fit  = tau_b[b_fit_mask]
+    msd_b_fit  = msd_b[b_fit_mask]
 
 
     # NEW: single power-law on the BINNED curve
-    if len(tau_b) >= 2 and np.all(tau_b > 0) and np.all(msd_b > 0):
-        # Straight log–log regression on (tau_b, msd_b)
-        sb, ib = np.polyfit(np.log10(tau_b), np.log10(msd_b), 1)
-        msd_fit_single_binned = 10**ib * (tau_b ** sb)
+    # if len(tau_b) >= 2 and np.all(tau_b > 0) and np.all(msd_b > 0):
+    #     # Straight log–log regression on (tau_b, msd_b)
+    #     sb, ib = np.polyfit(np.log10(tau_b), np.log10(msd_b), 1)
+    #     msd_fit_single_binned = 10**ib * (tau_b ** sb)
+    # else:
+    #     sb, ib = np.nan, np.nan
+    #     msd_fit_single_binned = None
+
+
+    # after mask
+    # single binned fit (only within cutoff)
+    if len(tau_b_fit) >= 2 and np.all(tau_b_fit > 0) and np.all(msd_b_fit > 0):
+        sb, ib = np.polyfit(np.log10(tau_b_fit), np.log10(msd_b_fit), 1)
+        msd_fit_single_binned = 10**ib * (tau_b_fit ** sb)      # plot vs tau_b_fit*0.025
     else:
         sb, ib = np.nan, np.nan
         msd_fit_single_binned = None
 
-
+    # reminder (use tau_b_fit, msd_b_fit instead of tau_b, msd_b)
     # 2-segment (broken power-law) on the BINNED curve
     msd_fit_2seg_binned = None
     popt_2seg_b = None
-    if (msd_fit_single_binned is not None) and (len(tau_b) >= 6):
+    if (msd_fit_single_binned is not None) and (len(tau_b_fit) >= 6):
         try:
             # choose a break on the binned series; ensure enough points on both sides
             # helper find_turning_point, use it on msd_b; otherwise pick mid-index
             if 'find_turning_point' in globals():
-                break_b = int(find_turning_point(msd_b))
+                break_b = int(find_turning_point(msd_b_fit))
             else:
-                break_b = len(tau_b) // 2
+                break_b = len(tau_b_fit) // 2
 
             # clamp break to have at least 3 points each side (tune later!)
-            break_b = int(np.clip(break_b, 3, len(tau_b) - 3))
+            break_b = int(np.clip(break_b, 3, len(tau_b_fit) - 3))
 
             # wrapper using same bkn_pow_2seg signature you already use
             def fit_wrapper_b(x, A, alpha1, alpha2):
                 return bkn_pow_2seg(x, A, alpha1, alpha2, break_b)[0]
 
             # initial guess and bounds (matching your raw fit style)
-            A_guess_b = max(np.mean(msd_b[:min(5, len(msd_b))]), 1e-5)
+            A_guess_b = max(np.mean(msd_b_fit[:min(5, len(msd_b_fit))]), 1e-5)
             initial_guess_b = [A_guess_b, 0.3, 1.0]
             bounds_2seg_b = ([1e-5, 0.1, 0.1], [10.0, 3.0, 3.0])
 
             popt_2seg_b, _ = curve_fit(
-                fit_wrapper_b, tau_b, msd_b,
+                fit_wrapper_b, tau_b_fit, msd_b_fit,
                 p0=initial_guess_b, bounds=bounds_2seg_b, maxfev=20000
             )
-            msd_fit_2seg_binned = bkn_pow_2seg(tau_b, *popt_2seg_b, break_b)[0]
+            msd_fit_2seg_binned = bkn_pow_2seg(tau_b_fit, *popt_2seg_b, break_b)[0]
 
         except Exception as e:
             # Not fatal—just skip if binned 2-seg fails
