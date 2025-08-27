@@ -865,7 +865,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     # print(f"[Single Power Law] α = {slope_single:.3f}, A = {10**intercept_single:.3e}")
     # print(f"[2-Seg Continuous Fit] α₁ = {popt_2seg[1]:.3f}, A₁ = {popt_2seg[0]:.3e}, α₂ = {popt_2seg[2]:.3f}, A₂ = {A2_2seg:.3e}, Break = {break1}")
 
-
+    # A: raw curves
     # to create DataFrame with all relevant curves
     fit_df = pd.DataFrame({
         "time_s": t_clean * 0.025,
@@ -879,6 +879,103 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
 
     dt = 0.025  # frame interval in seconds
+
+    # B: BINNED curves (only if computed binned series)
+    if ("tau_b" in locals()) and (tau_b is not None) and (len(tau_b) > 0):
+        binned_cols = {
+            "time_s_binned":           tau_b * dt,
+            "msd_binned":              msd_b
+        }
+        # add fits if present
+        if (msd_fit_single_binned is not None):
+            binned_cols["msd_fit_single_binned"] = msd_fit_single_binned
+        if ("msd_fit_2seg_binned" in locals()) and (msd_fit_2seg_binned is not None):
+            binned_cols["msd_fit_2seg_binned"] = msd_fit_2seg_binned
+
+        fit_df_binned = pd.DataFrame(binned_cols)
+        fit_df_binned.to_csv("Table 4b: msd_fits_comparison_binned.csv", index=False)
+
+    # C: Parameter table (raw + binned; single + two-seg)
+    def _safe(v, idx=None):
+        try:
+            return float(v if idx is None else v[idx])
+        except Exception:
+            return np.nan
+
+    def _aic_like(y, yhat, k):
+        try:
+            if (yhat is None) or (len(y) != len(yhat)) or (len(y) < k+1):
+                return np.nan
+            resid = np.asarray(y) - np.asarray(yhat)
+            sse = float(np.sum(resid**2))
+            N = len(y)
+            return (2*k + N*np.log(max(sse/N, 1e-300)))
+        except Exception:
+            return np.nan
+
+    param_rows = []
+
+    # RAW single power-law
+    param_rows.append({
+        "variant": "raw",
+        "model":   "single_pw",
+        "alpha1":  _safe(slope_single),
+        "alpha2":  np.nan,
+        "intercept_log10": _safe(intercept_single),
+        "break_index": np.nan,
+        "n_points": int(len(t_clean)),
+        "tau_min_s": float((t_clean*dt).min()) if len(t_clean) else np.nan,
+        "tau_max_s": float((t_clean*dt).max()) if len(t_clean) else np.nan,
+        "aic_like":  _aic_like(msd_clean, msd_fit_single, k=2),
+    })
+
+    # RAW two-segment
+    param_rows.append({
+        "variant": "raw",
+        "model":   "two_seg_pw",
+        "alpha1":  _safe(popt_2seg, 1),
+        "alpha2":  _safe(popt_2seg, 2),
+        "intercept_log10": np.nan,
+        "break_index": _safe(break1),
+        "n_points": int(len(t_clean)),
+        "tau_min_s": float((t_clean*dt).min()) if len(t_clean) else np.nan,
+        "tau_max_s": float((t_clean*dt).max()) if len(t_clean) else np.nan,
+        "aic_like":  _aic_like(msd_clean, msd_fit_2seg, k=3),
+    })
+
+    # BINNED single power-law
+    param_rows.append({
+        "variant": "binned",
+        "model":   "single_pw",
+        "alpha1":  _safe(sb),
+        "alpha2":  np.nan,
+        "intercept_log10": _safe(ib),
+        "break_index": np.nan,
+        "n_points": int(len(tau_b)) if ("tau_b" in locals() and tau_b is not None) else 0,
+        "tau_min_s": float((tau_b*dt).min()) if ("tau_b" in locals() and len(tau_b)>0) else np.nan,
+        "tau_max_s": float((tau_b*dt).max()) if ("tau_b" in locals() and len(tau_b)>0) else np.nan,
+        "aic_like":  _aic_like(msd_b, msd_fit_single_binned, k=2) if ("msd_fit_single_binned" in locals() and msd_fit_single_binned is not None) else np.nan,
+    })
+
+    # BINNED two-segment
+    param_rows.append({
+        "variant": "binned",
+        "model":   "two_seg_pw",
+        "alpha1":  _safe(popt_2seg_b, 1) if ("popt_2seg_b" in locals()) else np.nan,
+        "alpha2":  _safe(popt_2seg_b, 2) if ("popt_2seg_b" in locals()) else np.nan,
+        "intercept_log10": np.nan,
+        "break_index": _safe(break_b) if ("break_b" in locals()) else np.nan,
+        "n_points": int(len(tau_b)) if ("tau_b" in locals() and tau_b is not None) else 0,
+        "tau_min_s": float((tau_b*dt).min()) if ("tau_b" in locals() and len(tau_b)>0) else np.nan,
+        "tau_max_s": float((tau_b*dt).max()) if ("tau_b" in locals() and len(tau_b)>0) else np.nan,
+        "aic_like":  _aic_like(msd_b, msd_fit_2seg_binned, k=3) if ("msd_fit_2seg_binned" in locals() and msd_fit_2seg_binned is not None) else np.nan,
+    })
+
+    params_df = pd.DataFrame(param_rows)
+    params_df.to_csv("Table 4c: msd_fit_params.csv", index=False)
+
+
+
     all_data = []
 
     if len(tracks) >= 10:
