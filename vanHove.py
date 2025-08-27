@@ -843,6 +843,19 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
         sb, ib = np.nan, np.nan
         msd_fit_single_binned = None
 
+
+
+    # make full-length (aligned to tau_b) arrays for plotting/CSV
+    msd_fit_single_binned_full = np.full_like(msd_b, np.nan, dtype=float)
+    if msd_fit_single_binned is not None:
+        msd_fit_single_binned_full[b_fit_mask] = 10**ib * (tau_b_fit ** sb)
+
+    msd_fit_2seg_binned_full = None
+    if msd_fit_2seg_binned is not None:
+        msd_fit_2seg_binned_full = np.full_like(msd_b, np.nan, dtype=float)
+        msd_fit_2seg_binned_full[b_fit_mask] = msd_fit_2seg_binned
+
+
     # reminder (use tau_b_fit, msd_b_fit instead of tau_b, msd_b)
     # 2-segment (broken power-law) on the BINNED curve
     msd_fit_2seg_binned = None
@@ -868,10 +881,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
             initial_guess_b = [A_guess_b, 0.3, 1.0]
             bounds_2seg_b = ([1e-5, 0.1, 0.1], [10.0, 3.0, 3.0])
 
-            popt_2seg_b, _ = curve_fit(
-                fit_wrapper_b, tau_b_fit, msd_b_fit,
-                p0=initial_guess_b, bounds=bounds_2seg_b, maxfev=20000
-            )
+            popt_2seg_b, _ = curve_fit(fit_wrapper_b, tau_b_fit, msd_b_fit, p0=initial_guess_b, bounds=bounds_2seg_b, maxfev=20000)
             msd_fit_2seg_binned = bkn_pow_2seg(tau_b_fit, *popt_2seg_b, break_b)[0]
 
         except Exception as e:
@@ -891,14 +901,24 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     plt.plot(t_clean * 0.025, msd_fit_2seg, '--', label=f'2-Seg Fit (α₁ ≈ {popt_2seg[1]:.2f}, α₂ ≈ {popt_2seg[2]:.2f})')
 
 
-    # binned points (with tiny error bars) and binned single power-law
-    if msd_fit_single_binned is not None:
-        plt.errorbar(tau_b * 0.025, msd_b, yerr=np.clip(se_b, 0, None), fmt='o', ms=4, capsize=2, label='MSD (log-binned)')
-        plt.plot(tau_b * 0.025, msd_fit_single_binned, '-', lw=1.3, label=f'Single PW (binned) α≈{sb:.2f}')
+    # # binned points (with tiny error bars) and binned single power-law
+    # if msd_fit_single_binned is not None:
+    #     plt.errorbar(tau_b * 0.025, msd_b, yerr=np.clip(se_b, 0, None), fmt='o', ms=4, capsize=2, label='MSD (log-binned)')
+    #     plt.plot(tau_b * 0.025, msd_fit_single_binned, '-', lw=1.3, label=f'Single PW (binned) α≈{sb:.2f}')
 
 
-    if msd_fit_2seg_binned is not None:
-        plt.plot(tau_b * 0.025, msd_fit_2seg_binned, '-.', label=f'2-Seg (binned) α₁≈{popt_2seg_b[1]:.2f}, α₂≈{popt_2seg_b[2]:.2f}')
+    # if msd_fit_2seg_binned is not None:
+    #     plt.plot(tau_b * 0.025, msd_fit_2seg_binned, '-.', label=f'2-Seg (binned) α₁≈{popt_2seg_b[1]:.2f}, α₂≈{popt_2seg_b[2]:.2f}')
+
+    # binned points + fits (now lengths match tau_b)
+    plt.errorbar(tau_b * 0.025, msd_b, yerr=np.clip(se_b, 0, None), fmt='o', ms=4, capsize=2, label='MSD (log-binned)')
+
+    if np.isfinite(sb) and msd_fit_single_binned is not None: 
+        plt.plot(tau_b * 0.025, msd_fit_single_binned_full, '-', lw=1.3, label=f'Single PW (binned) α≈{sb:.2f}')
+
+    if (msd_fit_2seg_binned_full is not None) and (popt_2seg_b is not None):
+        plt.plot(tau_b * 0.025, msd_fit_2seg_binned_full, '-.', label=f'2-Seg (binned) α₁≈{popt_2seg_b[1]:.2f}, α₂≈{popt_2seg_b[2]:.2f}')
+
 
     plt.xscale('log')
     plt.yscale('log')
