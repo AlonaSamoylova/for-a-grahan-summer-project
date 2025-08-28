@@ -752,12 +752,15 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     # to compute binned MSD on τ (still in frames)
     tau_b, msd_b, w_b, se_b = log_bin_tau(t_clean, msd_clean, n_contrib, bins_per_decade=10, min_pts=3, keep_first=2)
 
+    # SAFE INITIALIZATION for binned fits -too many mistamashed axes errors
+    dt = 0.025  # your frame interval
+    # ensure these names always exist in this scope
+    sb = ib = np.nan
+    msd_fit_single_binned = None
 
-    # #
-    # # # we're interedsted in everything <= 1s: not were effective as well as if loops, let's edit valid instead
-    # mask = time_valid <= 10.0 #or 1.0
-    # time_valid_new = time_valid[mask]
-    # msd_valid_new = msd_valid[mask]  # Filtered to match time_valid
+    popt_2seg_b = None
+    msd_fit_2seg_binned = None
+
 
     # fit only cutoff mask
 
@@ -768,6 +771,24 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     t_fit   = t_clean[fit_mask]
     msd_fit = msd_clean[fit_mask]
         
+
+    # safe cutoff mask & sliced arrays (even if tau_b is empty)
+    if len(tau_b) > 0:
+        b_fit_mask = (tau_b * dt) <= FIT_MAX_S     # e.g., FIT_MAX_S = 10.0
+        tau_b_fit  = tau_b[b_fit_mask]
+        msd_b_fit  = msd_b[b_fit_mask]
+    else:
+        b_fit_mask = np.array([], dtype=bool)
+        tau_b_fit  = np.array([])
+        msd_b_fit  = np.array([])
+
+
+    # #
+    # # # we're interedsted in everything <= 1s: not were effective as well as if loops, let's edit valid instead
+    # mask = time_valid <= 10.0 #or 1.0
+    # time_valid_new = time_valid[mask]
+    # msd_valid_new = msd_valid[mask]  # Filtered to match time_valid
+
 
     turning_pt = 30 #for msd two-step (fixed), that's why broken power law with automatic one is better
 
@@ -845,17 +866,6 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
 
 
-    # make full-length (aligned to tau_b) arrays for plotting/CSV
-    msd_fit_single_binned_full = np.full_like(msd_b, np.nan, dtype=float)
-    if msd_fit_single_binned is not None:
-        msd_fit_single_binned_full[b_fit_mask] = 10**ib * (tau_b_fit ** sb)
-
-    msd_fit_2seg_binned_full = None
-    if msd_fit_2seg_binned is not None:
-        msd_fit_2seg_binned_full = np.full_like(msd_b, np.nan, dtype=float)
-        msd_fit_2seg_binned_full[b_fit_mask] = msd_fit_2seg_binned
-
-
     # reminder (use tau_b_fit, msd_b_fit instead of tau_b, msd_b)
     # 2-segment (broken power-law) on the BINNED curve
     msd_fit_2seg_binned = None
@@ -890,11 +900,26 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
             popt_2seg_b = None
 
 
+    
+    # make full-length (aligned to tau_b) arrays for plotting/CSV
+    msd_fit_single_binned_full = None
+    if len(tau_b) > 0:
+        msd_fit_single_binned_full = np.full_like(msd_b, np.nan, dtype=float)
+        if msd_fit_single_binned is not None:
+            msd_fit_single_binned_full[b_fit_mask] = 10**ib * (tau_b_fit ** sb)
+
+    msd_fit_2seg_binned_full = None
+    if len(tau_b) > 0:
+        msd_fit_2seg_binned_full = np.full_like(msd_b, np.nan, dtype=float)
+        if msd_fit_2seg_binned is not None:
+            msd_fit_2seg_binned_full[b_fit_mask] = msd_fit_2seg_binned
+
+
     # plotting original MSD with fits
     # plt.figure()
     plt.figure(figsize=(6, 4.5)) #to overlay binned
 
-    plt.plot(t_clean * 0.025, msd_fit_2seg, '--', label=f'2-Seg Fit (α₁ ≈ {popt_2seg[1]:.2f}, α₂ ≈ {popt_2seg[2]:.2f})')
+    # plt.plot(t_clean * 0.025, msd_fit_2seg, '--', label=f'2-Seg Fit (α₁ ≈ {popt_2seg[1]:.2f}, α₂ ≈ {popt_2seg[2]:.2f})')
 
     plt.plot(t_clean * 0.025, msd_clean, label='Original MSD', color='black')
     plt.plot(t_clean * 0.025, msd_fit_single, '--', label=f'Single Power Law (α ≈ {slope_single:.2f})')
@@ -956,10 +981,11 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
             "msd_binned":              msd_b
         }
         # add fits if present
-        if (msd_fit_single_binned is not None):
-            binned_cols["msd_fit_single_binned"] = msd_fit_single_binned
-        if ("msd_fit_2seg_binned" in locals()) and (msd_fit_2seg_binned is not None):
-            binned_cols["msd_fit_2seg_binned"] = msd_fit_2seg_binned
+        if msd_fit_single_binned_full is not None:
+            binned_cols["msd_fit_single_binned"] = msd_fit_single_binned_full
+        if msd_fit_2seg_binned_full is not None:
+            binned_cols["msd_fit_2seg_binned"]   = msd_fit_2seg_binned_full
+
 
         fit_df_binned = pd.DataFrame(binned_cols)
         fit_df_binned.to_csv("Table 4b: msd_fits_comparison_binned.csv", index=False)
@@ -995,7 +1021,8 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
         "n_points": int(len(t_clean)),
         "tau_min_s": float((t_clean*dt).min()) if len(t_clean) else np.nan,
         "tau_max_s": float((t_clean*dt).max()) if len(t_clean) else np.nan,
-        "aic_like":  _aic_like(msd_clean, msd_fit_single, k=2),
+        "aic_like": _aic_like(msd_b, msd_fit_single_binned_full, k=2)
+
     })
 
     # RAW two-segment
@@ -1009,7 +1036,8 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
         "n_points": int(len(t_clean)),
         "tau_min_s": float((t_clean*dt).min()) if len(t_clean) else np.nan,
         "tau_max_s": float((t_clean*dt).max()) if len(t_clean) else np.nan,
-        "aic_like":  _aic_like(msd_clean, msd_fit_2seg, k=3),
+        "aic_like": _aic_like(msd_b, msd_fit_2seg_binned_full, k=3)
+
     })
 
     # BINNED single power-law
@@ -1192,7 +1220,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
         total_tracks += 1
 
         # Optional: skip short or empty tracks
-        if len(msd_clean) < 10 or np.any(np.isnan(msd_trimmed)) or np.any(msd_trimmed <= 0):
+        if len(msd_trimmed) < 10 or np.any(np.isnan(msd_trimmed)) or np.any(msd_trimmed <= 0):  
             skipped_short += 1
             raise ValueError("Not enough valid data points.")
 
