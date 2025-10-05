@@ -2036,7 +2036,8 @@ def save_van_hove_results_abs_old(all_data, csv_filename="Table_vanHove.csv", fi
         y = np.clip(sub[pcol].to_numpy(), eps, None)
 
         # main curve
-        plt.plot(x, y, label=f"Δt = {int(lag)}")
+        # plt.plot(x, y, label=f"Δt = {int(lag)}")
+        # to plot decimals (frames)
 
         # dashed fit: prefer existing column; otherwise refit to get sigma for label
         fit_label = f"Fit Δt = {int(lag)}"
