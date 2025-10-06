@@ -1843,7 +1843,7 @@ def linearLog_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 10, 30
 
 
 # same as above but with log scale + added cage hopping
-def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[0.1, 1, 30], bins=100, range_max=10.0, dt=0.025, lag_units="frames"  ): # 'frames' or 'seconds'):  #already log scale
+def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[0.1, 1, 30], bins=100, range_max=10.0, dt=0.025, lag_units="seconds"  ): # 'frames' or 'seconds'):  #already log scale
     all_data = []  # collect for CSV
     plt.figure(figsize=(8, 5))
 
