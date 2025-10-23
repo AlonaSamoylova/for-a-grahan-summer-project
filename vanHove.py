@@ -1686,35 +1686,115 @@ def convert_tracks_to_df(tracks):
 
 
 # helper to modify vanHove to take not only 3 integer vals
-def _normalize_lags(lags_to_plot, dt=0.025, max_frames=None, units="frames"):
-    """
-    Convert user-specified lags (frames or seconds) to valid integer frame lags.
-    - lags_to_plot: list of numbers (frames if units='frames', seconds if units='seconds')
-    - dt: seconds per frame (used only when units='seconds')
-    - max_frames: optional cap; if given we clip to <= max_frames-1
-    - returns: sorted unique np.array of integer lags >= 1
-    """
-    import numpy as np
+# def _normalize_lags(lags_to_plot, dt=0.025, max_frames=None, units="frames"):
+#     """
+#     Convert user-specified lags (frames or seconds) to valid integer frame lags.
+#     - lags_to_plot: list of numbers (frames if units='frames', seconds if units='seconds')
+#     - dt: seconds per frame (used only when units='seconds')
+#     - max_frames: optional cap; if given we clip to <= max_frames-1
+#     - returns: sorted unique np.array of integer lags >= 1
+#     """
+#     import numpy as np
 
-    arr = np.asarray(lags_to_plot, dtype=float)
-    if units.lower().startswith("sec"):
-        # seconds -> frames
-        arr = np.round(arr / float(dt))
+#     arr = np.asarray(lags_to_plot, dtype=float)
+#     if units.lower().startswith("sec"):
+#         # seconds -> frames
+#         arr = np.round(arr / float(dt))
 
-    # frames as int, valid (>=1)
-    arr = arr.astype(int)
-    arr = arr[arr >= 1]
+#     # frames as int, valid (>=1)
+#     arr = arr.astype(int)
+#     arr = arr[arr >= 1]
+#     if max_frames is not None:
+#         arr = arr[arr < int(max_frames)]  # need at least lag+1 samples
+
+#     # unique + sorted
+#     arr = np.unique(arr)
+#     return arr
+
+# same helper but works for any type of input provided: v3. now i don't need separate helpers for different functions
+def normalize_lags(
+    lag_spec,
+    dt=0.025,
+    units="auto",          # "auto" | "frames" | "seconds"
+    max_frames=None,       # clip to < max_frames (need at least lag+1 samples)
+    return_labels=True,    # also return legend strings
+    label_seconds_precision=3
+):
+    """
+    To normalize user-specified lags to valid integer frame lags (>=1), optionally
+    producing legend-ready labels that include BOTH seconds and frames.
+
+    Parameters:
+        lag_spec : iterable (float or int)
+            Lags specified either in frames or seconds (or mixed).
+        dt (float):
+            Seconds per frame.
+        units (str):
+            "auto"   : ints→frames, floats→seconds
+            "frames" : treat all values as frames
+            "seconds": treat all values as seconds
+        max_frames (int or None):
+            If given, drop lags >= max_frames (need lag+1 samples).
+        return_labels (bool):
+            If True, also return labels like "Δt = 0.100s (4 fr)".
+        label_seconds_precision (int):
+            Decimal places for seconds in labels.
+
+    Returns
+    -------
+    frames : array [int]
+        Sorted unique integer frame lags (>=1).
+    labels : list[str] or None
+        Legend strings for each frame lag (if return_labels=True).
+    """
+
+    # to array (keeps NaNs out)
+    arr = np.asarray(list(lag_spec), dtype=float)
+    if arr.size == 0:
+        return np.array([], dtype=int), ([] if return_labels else None)
+
+    # decide how to interpret inputs
+    if units == "auto":
+        # integers → frames; non-integers → seconds
+        is_intlike = np.isclose(arr, np.round(arr))
+        frames = np.round(arr[is_intlike]).astype(int)
+        secs   = arr[~is_intlike]
+        frames_from_secs = np.round(secs / float(dt)).astype(int)
+        frames = np.concatenate([frames, frames_from_secs])
+    elif units == "frames":
+        frames = np.round(arr).astype(int)
+    elif units == "seconds":
+        frames = np.round(arr / float(dt)).astype(int)
+    else:
+        raise ValueError("units must be 'auto', 'frames', or 'seconds'")
+
+    # enforce valid range (>=1)
+    frames = frames[frames >= 1]
+    if frames.size == 0:
+        return np.array([], dtype=int), ([] if return_labels else None)
+
+    # optional upper clip
     if max_frames is not None:
-        arr = arr[arr < int(max_frames)]  # need at least lag+1 samples
+        frames = frames[frames < int(max_frames)]
 
     # unique + sorted
-    arr = np.unique(arr)
-    return arr
+    frames = np.unique(frames)
+
+    if not return_labels:
+        return frames, None
+
+    # build legend labels with both units
+    sec_vals = frames * float(dt)
+    fmt = f"{{:.{label_seconds_precision}f}}"
+    labels = [f"Δt = {fmt.format(s)}s ({f} fr)" for s, f in zip(sec_vals, frames)]
+    return frames, labels
+
+
 
 # van hove for x, custom
 tracks_filtered, single_trajs, double_trajs = CalcMSD(path)
 
-def linear_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 10, 30], bins=400, range_max=15.0): #15,30,46
+def linear_pooled_log_scaled_van_hove_per_lag_old(tracks, lags_to_plot=[1, 10, 30], bins=400, range_max=15.0): #15,30,46
     # tracks = CalcMSD(path)
     bin_edges = np.linspace(-range_max, range_max, bins + 1)
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
@@ -1776,9 +1856,87 @@ def linear_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 10, 30], 
 
     return all_data
 
+def linear_pooled_log_scaled_van_hove_per_lag(
+    tracks,
+    lags_to_plot=(0.1, 1.0, 30.0),   # seconds or frames (mixed allowed)
+    bins=400,
+    range_max=15.0,
+    dt=0.025
+):
+    """
+    Two-sided Van Hove (signed Δx), linear X + linear Y.
+    Uses geometric-mean scaling per lag for robustness.
+    Returns: all_data (list of rows for CSV)
+    """
+    # normalize lags & labels
+    max_len = max((traj.shape[0] for traj in tracks if traj is not None), default=0)
+    lags_frames, lag_labels = normalize_lags(lags_to_plot, dt=dt, units="auto",
+                                             max_frames=max_len, return_labels=True)
+
+    bin_edges   = np.linspace(-range_max, +range_max, bins + 1)
+    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+
+    all_data = []
+    plt.figure(figsize=(8, 5))
+
+    for fr, lab in zip(lags_frames, lag_labels):
+        all_scaled_dx = []
+
+        for traj in tracks:
+            if traj.shape[0] < fr + 1:
+                continue
+            x = traj[:, 0]
+            if np.isnan(x).all() or np.allclose(x, x[0]):
+                continue
+
+            dx = x[fr:] - x[:-fr]
+            nz = np.abs(dx[dx != 0.0])
+            if nz.size == 0:
+                continue
+            xi = np.exp(np.mean(np.log(nz)))
+            all_scaled_dx.extend(dx / xi)
+
+        if not all_scaled_dx:
+            continue
+
+        all_scaled_dx = np.asarray(all_scaled_dx)
+        hist, _ = np.histogram(all_scaled_dx, bins=bin_edges, density=True)
+
+        H, A, mu, sigma = gauss_fit(bin_centers, hist)
+        gauss_curve = gauss(bin_centers, H, A, mu, sigma)
+
+        # plot (fully linear)
+        plt.plot(bin_centers, hist, label=lab)
+        plt.plot(bin_centers, gauss_curve, '--',
+                 label=f"Fit {lab}, σ={sigma:.2f}")
+
+        lag_s = fr * dt
+        for x_val, h_val, g_val in zip(bin_centers, hist, gauss_curve):
+            all_data.append({
+                "lag_time_frames": int(fr),
+                "lag_time_s": float(lag_s),
+                "bin_center": float(x_val),
+                "P(Δx)": float(h_val),
+                "gaussian_fit": float(g_val),
+            })
+
+    plt.xlabel("Scaled Δx (signed)")
+    plt.ylabel("P(Δx)")
+    plt.title("Van Hove (two-sided) with Gaussian fits (linear axes)")
+    plt.grid(True, ls="--", alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+
+    # (optional) save a CSV mirroring what was plotted
+    if all_data:
+        df = pd.DataFrame(all_data).sort_values(["lag_time_frames", "bin_center"])
+        df.to_csv("Table_vanhove_two_sided_linear.csv", index=False)
+
+    return all_data
+
 
 # log-linear for the two side VanHove; nearly same as above
-def linearLog_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 10, 30], bins=400, range_max=15.0): #15,30,46  #used to be bins=100, range_max=10.0; increased to 400 and 15 to see fat tails #0.1 1 30
+def linearLog_pooled_log_scaled_van_hove_per_lag_old(tracks, lags_to_plot=[1, 10, 30], bins=400, range_max=15.0): #15,30,46  #used to be bins=100, range_max=10.0; increased to 400 and 15 to see fat tails #0.1 1 30
     # tracks = CalcMSD(path)
     bin_edges = np.linspace(-range_max, range_max, bins + 1)
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
@@ -1841,9 +1999,208 @@ def linearLog_pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[1, 10, 30
 
     return all_data
 
+def linearLog_pooled_log_scaled_van_hove_per_lag(
+    tracks,
+    lags_to_plot=(0.1, 1.0, 30.0),   # seconds or frames (mixed allowed)
+    bins=400,
+    range_max=15.0,
+    dt=0.025
+):
+    """
+    Two-sided Van Hove (signed Δx), linear X + log Y.
+    Uses geometric-mean scaling per lag for robustness.
+    Returns: all_data (list of rows for CSV)
+    """
+    # normalize lags & labels
+    max_len = max((traj.shape[0] for traj in tracks if traj is not None), default=0)
+    lags_frames, lag_labels = normalize_lags(lags_to_plot, dt=dt, units="auto",
+                                             max_frames=max_len, return_labels=True)
+
+    # two-sided linear bins over signed displacements
+    bin_edges   = np.linspace(-range_max, +range_max, bins + 1)
+    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+
+    all_data = []
+    plt.figure(figsize=(8, 5))
+    eps = 1e-12  # only for display on log-Y
+
+    for fr, lab in zip(lags_frames, lag_labels):
+        all_scaled_dx = []
+
+        for traj in tracks:
+            if traj.shape[0] < fr + 1:
+                continue
+            x = traj[:, 0]
+            if np.isnan(x).all() or np.allclose(x, x[0]):
+                continue
+
+            dx = x[fr:] - x[:-fr]
+            nz = np.abs(dx[dx != 0.0])
+            if nz.size == 0:
+                continue
+            xi = np.exp(np.mean(np.log(nz)))
+            all_scaled_dx.extend(dx / xi)
+
+        if not all_scaled_dx:
+            continue
+
+        all_scaled_dx = np.asarray(all_scaled_dx)
+        hist, _ = np.histogram(all_scaled_dx, bins=bin_edges, density=True)
+
+        H, A, mu, sigma = gauss_fit(bin_centers, hist)
+        gauss_curve = gauss(bin_centers, H, A, mu, sigma)
+
+        # plot (log Y)
+        plt.plot(bin_centers, np.clip(hist, eps, None), label=lab)
+        plt.plot(bin_centers, np.clip(gauss_curve, eps, None), '--',
+                 label=f"Fit {lab}, σ={sigma:.2f}")
+
+        lag_s = fr * dt
+        for x_val, h_val, g_val in zip(bin_centers, hist, gauss_curve):
+            all_data.append({
+                "lag_time_frames": int(fr),
+                "lag_time_s": float(lag_s),
+                "bin_center": float(x_val),
+                "P(Δx)": float(h_val),
+                "gaussian_fit": float(g_val),
+            })
+
+    plt.yscale("log")                      # linear X + log Y
+    plt.xlabel("Scaled Δx (signed)")
+    plt.ylabel("P(Δx)")
+    plt.title("Van Hove (two-sided) with log-scaled Y and Gaussian fits")
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+
+    # (optional) save a CSV mirroring what was plotted
+    if all_data:
+        df = pd.DataFrame(all_data).sort_values(["lag_time_frames", "bin_center"])
+        df.to_csv("Table_vanhove_two_sided_logY.csv", index=False)
+
+    return all_data
+
 
 # same as above but with log scale + added cage hopping
-def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[0.1, 1, 30], bins=100, range_max=10.0, dt=0.025, lag_units="seconds"  ): # 'frames' or 'seconds'):  #already log scale
+def pooled_log_scaled_van_hove_per_lag(
+    tracks,
+    lags_to_plot=(0.1, 1.0, 30.0),   # seconds or frames (mixed allowed)
+    bins=100,
+    range_max=10.0,
+    dt=0.025,                        # seconds per frame
+    lag_units="seconds"              # kept for backward compat; we use normalize_lags(auto)
+):
+    """
+    One-sided Van Hove with log–log axes. Displacements are scaled per lag by a
+    geometric-mean factor to make curves comparable across Δt.
+    Accepts lag list in seconds or frames; legends show both.
+    Returns: (all_data, Rg_hoppers, Rg_non_hoppers)
+    """
+    all_data = []
+
+    # decide the longest usable length to clip lags safely
+    max_len = max((traj.shape[0] for traj in tracks if traj is not None), default=0)
+
+    # unified helper: frames (int) for computation + prebuilt labels for legend
+    lags_frames, lag_labels = normalize_lags(
+        lags_to_plot, dt=dt, units="auto", max_frames=max_len, return_labels=True
+    )
+
+    plt.figure(figsize=(8, 5))
+
+    for fr, lab in zip(lags_frames, lag_labels):
+        all_scaled_dx = []
+
+        for traj in tracks:
+            if traj.shape[0] < fr + 1:
+                continue
+            x = traj[:, 0]
+            if np.isnan(x).all() or np.allclose(x, x[0]):
+                continue
+
+            dx = x[fr:] - x[:-fr]
+
+            # robust per-lag scale (geometric mean of |dx| over nonzeros)
+            nz = np.abs(dx[dx != 0.0])
+            if nz.size == 0:
+                continue
+            xi = np.exp(np.mean(np.log(nz)))
+            scaled_dx = dx / xi
+            all_scaled_dx.extend(scaled_dx)
+
+        if not all_scaled_dx:
+            continue
+
+        # build |Δx|, exclude zeros for log binning
+        all_scaled_dx = np.abs(np.asarray(all_scaled_dx))
+        all_scaled_dx = all_scaled_dx[all_scaled_dx > 0.0]
+        if all_scaled_dx.size == 0:
+            continue
+
+        # log-spaced bins for |Δx|
+        max_abs_dx  = min(np.percentile(all_scaled_dx, 99), range_max)
+        min_nonzero = max(np.min(all_scaled_dx), 1e-3)
+        if min_nonzero >= max_abs_dx:   # safety for pathological cases
+            continue
+
+        bin_edges   = np.logspace(np.log10(min_nonzero), np.log10(max_abs_dx), bins + 1)
+        bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+        hist, _     = np.histogram(all_scaled_dx, bins=bin_edges, density=True)
+
+        # gaussian fit in the plotted coordinates
+        H, A, mu, sigma = gauss_fit(bin_centers, hist)
+        gauss_curve      = gauss(bin_centers, H, A, mu, sigma)
+
+        # plot main + dashed fit (labels already include both units)
+        plt.plot(bin_centers, hist, label=lab)
+        plt.plot(bin_centers, gauss_curve, '--', label=f"Fit {lab}, σ={sigma:.2f}")
+
+        # stash for CSV
+        lag_s = fr * dt
+        for x_val, h_val, g_val in zip(bin_centers, hist, gauss_curve):
+            all_data.append({
+                "lag_time_frames": int(fr),
+                "lag_time_s": float(lag_s),
+                "bin_center": float(x_val),
+                "P(|Δx|)": float(h_val),
+                "gaussian_fit": float(g_val),
+            })
+
+    # styling to match in-function look
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xlabel("Scaled |Δx|")
+    plt.ylabel("P(|Δx|)")
+    plt.title("Van Hove (log–log) per lag with Gaussian fits")
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+
+    # save the data (same table name you used)
+    if all_data:
+        df = pd.DataFrame(all_data).sort_values(["lag_time_frames", "bin_center"])
+        df.to_csv("Table 7: vanhove_log_scaled_fits_data.csv", index=False)
+
+    # --- cage hopping classification (unchanged) ---
+    seg_size = 10
+    Rg_hoppers, Rg_non_hoppers = [], []
+    for traj in tracks:
+        if traj.shape[0] < seg_size:
+            continue
+        Rg_values = calc_Rg_seg(traj, seg_size)
+        if (len(Rg_values) == 0) or np.isnan(Rg_values).all():
+            continue
+
+        mean_Rg = np.nanmean(Rg_values)
+        std_Rg  = np.nanstd(Rg_values)
+        threshold = mean_Rg + 2 * std_Rg
+
+        (Rg_hoppers if np.any(Rg_values > threshold) else Rg_non_hoppers).append(traj)
+
+    return all_data, Rg_hoppers, Rg_non_hoppers
+
+
+def pooled_log_scaled_van_hove_per_lag_v1(tracks, lags_to_plot=[0.1, 1, 30], bins=100, range_max=10.0, dt=0.025, lag_units="seconds"  ): # 'frames' or 'seconds'):  #already log scale
     all_data = []  # collect for CSV
     plt.figure(figsize=(8, 5))
 
@@ -1859,7 +2216,7 @@ def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[0.1, 1, 30], bins=1
 
 
 
-    lags_frames = _normalize_lags(lags_to_plot, dt=dt, max_frames=max_len, units=lag_units)
+    lags_frames = normalize_lags(lags_to_plot, dt=dt, max_frames=max_len, units=lag_units) #needed _normalize_lags
 
     if lags_frames.size == 0:
 
@@ -1974,10 +2331,199 @@ def pooled_log_scaled_van_hove_per_lag(tracks, lags_to_plot=[0.1, 1, 30], bins=1
 
     return all_data, Rg_hoppers, Rg_non_hoppers
 
+# old variant
+def pooled_log_scaled_van_hove_per_lag_old(tracks, lags_to_plot=[0.1, 1, 30], bins=100, range_max=10.0):  #already log scale
 
+    all_data = []  # collect for CSV
+
+
+    plt.figure(figsize=(8, 5))
+
+
+
+    for lag in lags_to_plot:
+
+        all_scaled_dx = []
+
+
+
+        for traj in tracks:
+
+            if traj.shape[0] < lag + 1:
+
+                continue
+
+            x = traj[:, 0] ##x component  y = traj[:, 1]
+
+            if np.isnan(x).all() or np.allclose(x, x[0]):
+
+                continue
+
+
+
+            dx = x[lag:] - x[:-lag]
+
+            safe_log = np.log(np.abs(dx[dx != 0]))
+
+            if len(safe_log) == 0:
+
+                continue
+
+            xi = np.exp(np.mean(safe_log))
+
+            scaled_dx = dx / xi
+
+            all_scaled_dx.extend(scaled_dx)
+
+
+
+        if not all_scaled_dx:
+
+            continue
+
+
+
+        all_scaled_dx = np.abs(all_scaled_dx) 
+
+        all_scaled_dx = all_scaled_dx[all_scaled_dx > 0]# remove exact zeros to avoid log(0)
+
+
+
+        if len(all_scaled_dx) == 0:
+
+            raise ValueError("All displacements are zero; cannot create log-log plot.")
+
+
+
+        max_abs_dx = min(np.percentile(all_scaled_dx, 99), 50) # clip at 99th percentile
+
+        min_nonzero = max(np.min(all_scaled_dx), 1e-3) # set a reasonable lower limit -> # lower limit for it not to be too small/cause issues
+
+
+
+        bin_edges = np.logspace(np.log10(min_nonzero), np.log10(max_abs_dx), bins + 1)
+
+        bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+
+
+
+        hist, _ = np.histogram(all_scaled_dx, bins=bin_edges, density=True)
+
+        H, A, mu, sigma = gauss_fit(bin_centers, hist) #may not be gaussioan anymore -> because 
+
+        gauss_curve = gauss(bin_centers, H, A, mu, sigma)
+
+
+
+        plt.plot(bin_centers, hist, label=f"Δt = {lag}")
+
+        plt.plot(bin_centers, gauss_curve, '--', label=f"Fit Δt = {lag}, σ={sigma:.2f}")
+
+
+
+        for x_val, h_val, g_val in zip(bin_centers, hist, gauss_curve):
+
+            all_data.append({
+
+                "lag_time": lag,
+
+                "bin_center": x_val,
+
+                "P(Δx)": h_val,
+
+                "gaussian_fit": g_val
+
+            })
+
+
+
+    plt.xscale("log")
+
+    plt.yscale("log")
+
+    plt.xlabel("Scaled |Δx|")
+
+    plt.ylabel("P(|Δx|)")
+
+    plt.title("Van Hove (log-log) per lag with Gaussian fits")
+
+    plt.legend()
+
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+
+    plt.tight_layout()
+
+    # plt.savefig("Figure 7: vanhove_log_scaled_fits.png", dpi=300)
+
+
+
+
+
+    # plt.show()
+
+
+
+    # save data as CSV
+
+
+
+    df = pd.DataFrame(all_data)
+
+    df.to_csv("Table 7: vanhove_log_scaled_fits_data.csv", index=False)
+
+
+
+    #cage hopping: 
+
+    seg_size = 10  # to adjust as needed
+
+    Rg_hoppers = []
+
+    Rg_non_hoppers = []
+
+
+
+    for traj in tracks:
+
+        if traj.shape[0] < seg_size:
+
+            continue  # too short to segment
+
+
+
+        Rg_values = calc_Rg_seg(traj, seg_size) #applied to each traj.
+
+
+
+        if len(Rg_values) == 0 or np.isnan(Rg_values).all():
+
+            continue
+
+
+
+        mean_Rg = np.nanmean(Rg_values)
+
+        std_Rg = np.nanstd(Rg_values)
+
+        threshold = mean_Rg + 2 * std_Rg  #mean + 2×std. =>10 -extreme
+
+
+
+        if np.any(Rg_values > threshold):
+
+            Rg_hoppers.append(traj) #save the idx; look for %
+
+        else:
+
+            Rg_non_hoppers.append(traj)
+
+
+
+    return all_data, Rg_hoppers, Rg_non_hoppers
 
 # to save all plots instead of 1 by 1
 
+# linear
 def save_van_hove_results(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
     """
     Save van Hove results from pooled_log_scaled_van_hove_per_lag to CSV and figure.
@@ -2007,6 +2553,94 @@ def save_van_hove_results(all_data, csv_filename="Table_vanHove.csv", fig_filena
     plt.tight_layout()
     plt.savefig(fig_filename, dpi=300)
     plt.close()
+
+def save_van_hove_results_linear(
+    all_data,
+    csv_filename="Table_vanHove_linear.csv",
+    fig_filename="Figure_vanHove_linear.png",
+    dt=0.025,              # used if lag_time_s missing
+    refit_sigma=False      # True => refit sigma from (x,y)
+):
+    """
+    Replot two-sided Van Hove (signed Δx) with linear X and linear Y.
+    Compatible with outputs from linear_pooled_log_scaled_van_hove_per_lag().
+
+    Expects rows with:
+      - 'lag_time_frames' (int) and/or 'lag_time_s' (float)
+      - 'bin_center'
+      - 'P(Δx)' OR 'P(|Δx|)' (probability density column)
+      - optional 'gaussian_fit'
+    """
+    if not all_data:
+        print("No data to save.")
+        return
+
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    df = pd.DataFrame(all_data).copy()
+
+    # pick probability column robustly
+    pcol = None
+    for cand in ("P(Δx)", "P(|Δx|)", "P(dx)", "P(|dx|)"):
+        if cand in df.columns:
+            pcol = cand
+            break
+    if pcol is None:
+        raise KeyError("Expected a probability column like 'P(Δx)' or 'P(|Δx|)' not found in all_data.")
+
+    # ensure lag columns
+    if "lag_time_frames" not in df.columns:
+        if "lag_time" in df.columns:  # legacy
+            df["lag_time_frames"] = df["lag_time"].astype(int)
+        else:
+            raise KeyError("No 'lag_time_frames' (or fallback 'lag_time') in all_data.")
+    if "lag_time_s" not in df.columns:
+        df["lag_time_s"] = df["lag_time_frames"] * float(dt)
+
+    # sort & persist
+    df = df.sort_values(["lag_time_frames", "bin_center"])
+    df.to_csv(csv_filename, index=False)
+
+    # plot
+    plt.figure(figsize=(8, 5))
+    for fr, sub in df.groupby("lag_time_frames"):
+        x = sub["bin_center"].to_numpy()
+        y = sub[pcol].to_numpy()
+
+        # main curve (no clipping needed on linear axes)
+        plt.plot(x, y, label=f"Δt = {sub['lag_time_s'].iloc[0]:.3f}s ({int(fr)} fr)")
+
+        # dashed fit
+        do_refit = refit_sigma or ("gaussian_fit" not in sub.columns)
+        if do_refit:
+            try:
+                H, A, mu, sigma = gauss_fit(x, y)
+                g = gauss(x, H, A, mu, sigma)
+                plt.plot(x, g, "--",
+                         label=f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s, σ={sigma:.2f}")
+            except Exception:
+                pass
+        else:
+            g = sub["gaussian_fit"].to_numpy()
+            # try to annotate σ (non-fatal if it fails)
+            try:
+                H, A, mu, sigma = gauss_fit(x, y)
+                lbl = f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s, σ={sigma:.2f}"
+            except Exception:
+                lbl = f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s"
+            plt.plot(x, g, "--", label=lbl)
+
+    plt.xlabel("Scaled Δx (signed)")
+    plt.ylabel("P(Δx)")
+    plt.title("Van Hove (two-sided) with Gaussian fits (linear axes)")
+    plt.grid(True, ls="--", alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(fig_filename, dpi=300)
+    plt.close()
+
 
 def save_van_hove_results_abs_old(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
     """
@@ -2074,7 +2708,7 @@ def save_van_hove_results_abs_old(all_data, csv_filename="Table_vanHove.csv", fi
 # try change y-axis to log scale (instead of linear) - highlight differences
 
 
-def save_van_hove_results_abs(
+def save_van_hove_results_abs_v1(
     all_data,
     csv_filename="Table_vanHove.csv",
     fig_filename="Figure_vanHove.png",
@@ -2092,9 +2726,6 @@ def save_van_hove_results_abs(
     - If 'gaussian_fit' is present, plots it; otherwise refits a Gaussian on |Δx|.
     - Saves a clean CSV identical to what it plotted.
     """
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
 
     if not all_data:
         print("No data to save.")
@@ -2183,8 +2814,118 @@ def save_van_hove_results_abs(
     plt.savefig(fig_filename, dpi=300)
     plt.close()
 
+def save_van_hove_results_abs(
+    all_data,
+    csv_filename="Table_vanHove_abs.csv",
+    fig_filename="Figure_vanHove_abs.png",
+    dt=0.025,                 # only used for labels if lag_time_s is missing
+    refit_sigma=False,        # True => refit sigma from (x,y) instead of trusting stored gaussian_fit
+    clip_eps_for_plot=1e-12   # avoid log(0) on display; CSV stays unmodified
+):
+    """
+    Replot one-sided Van Hove (|Δx|) results to match the in-function log–log look.
+    Works with data produced by the new pooled_* function(s).
 
-def save_van_hove_results_logScaledY(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
+    Expects (rows) with:
+      - 'lag_time_frames' (int) and/or 'lag_time_s' (float)
+      - 'bin_center'
+      - 'P(|Δx|)'  OR 'P(Δx)'    (probability density column name)
+      - optional 'gaussian_fit'
+
+    Behavior:
+      - Sorts by (lag, bin_center) for smooth lines
+      - Labels show both seconds and frames: Δt = {secs:.3f}s ({frames} fr)
+      - Plots log–log axes
+      - If refit_sigma=True OR no 'gaussian_fit' column, refits Gaussian for dashed curve
+      - Otherwise uses stored 'gaussian_fit' as the dashed curve
+    """
+    if not all_data:
+        print("No data to save.")
+        return
+
+    # to convert + pick probability column name robustly
+    df = pd.DataFrame(all_data).copy()
+    pcol = None
+    for cand in ("P(|Δx|)", "P(Δx)", "P(|dx|)", "P(dx)"):
+        if cand in df.columns:
+            pcol = cand
+            break
+    if pcol is None:
+        raise KeyError("Expected a probability column like 'P(|Δx|)' or 'P(Δx)' not found in all_data.")
+
+    # to ensure lag columns exist (at least frames; seconds for nicer labels)
+    has_frames = "lag_time_frames" in df.columns
+    has_secs   = "lag_time_s" in df.columns
+    if not has_frames and "lag_time" in df.columns:
+        # back-compat: older code used 'lag_time' (frames)
+        df["lag_time_frames"] = df["lag_time"].astype(int)
+        has_frames = True
+    if not has_secs and has_frames:
+        df["lag_time_s"] = df["lag_time_frames"] * float(dt)
+        has_secs = True
+
+    if not has_frames:
+        raise KeyError("No 'lag_time_frames' (or fallback 'lag_time') in all_data; cannot group by lag.")
+    if "bin_center" not in df.columns:
+        raise KeyError("No 'bin_center' in all_data; cannot replot curves.")
+
+    # to sort for smooth lines and save the (possibly augmented) table
+    df = df.sort_values(["lag_time_frames", "bin_center"])
+    df.to_csv(csv_filename, index=False)
+
+    #plotingt
+    plt.figure(figsize=(8, 5))
+
+    # to group by frames so legends are stable; format label with both units
+    for fr, sub in df.groupby("lag_time_frames"):
+        x = sub["bin_center"].to_numpy()
+        y = sub[pcol].to_numpy()
+
+        # Main curve
+        plt.plot(x, np.clip(y, clip_eps_for_plot, None),
+                 label=f"Δt = {sub['lag_time_s'].iloc[0]:.3f}s ({int(fr)} fr)")
+
+        # Dashed curve: use stored 'gaussian_fit' if available and we don't refit
+        do_refit = refit_sigma or ("gaussian_fit" not in sub.columns)
+        if do_refit:
+            try:
+                H, A, mu, sigma = gauss_fit(x, y)
+                g = gauss(x, H, A, mu, sigma)
+                plt.plot(x, np.clip(g, clip_eps_for_plot, None), "--",
+                         label=f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s, σ={sigma:.2f}")
+            except Exception:
+                # if fitting fails, skip dashed curve 
+                pass
+        else:
+            g = sub["gaussian_fit"].to_numpy()
+            # try to recover sigma to annotate legend (non-fatal if it fails)
+            sigma_lbl = None
+            try:
+                H, A, mu, sigma = gauss_fit(x, y)
+                sigma_lbl = f"{sigma:.2f}"
+            except Exception:
+                pass
+            if sigma_lbl is None:
+                plt.plot(x, np.clip(g, clip_eps_for_plot, None), "--",
+                         label=f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s")
+            else:
+                plt.plot(x, np.clip(g, clip_eps_for_plot, None), "--",
+                         label=f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s, σ={sigma_lbl}")
+
+    # to match the pooled function styling
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xlabel("Scaled |Δx|")
+    plt.ylabel("P(|Δx|)")
+    plt.title("Van Hove (log–log) per lag with Gaussian fits")
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(fig_filename, dpi=300)
+    plt.close()
+
+
+def save_van_hove_results_logScaledY_old(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
     """
     Save and replot two-sided Van Hove with log-scaled Y axis.
     """
@@ -2217,18 +2958,108 @@ def save_van_hove_results_logScaledY(all_data, csv_filename="Table_vanHove.csv",
     plt.savefig(fig_filename, dpi=300)
     plt.close()
 
+def save_van_hove_results_logScaledY(
+    all_data,
+    csv_filename="Table_vanHove_logY.csv",
+    fig_filename="Figure_vanHove_logY.png",
+    dt=0.025,                 # used if lag_time_s missing
+    refit_sigma=False,        # True => refit sigma from (x,y)
+    clip_eps_for_plot=1e-12   # avoid log(0) on display; CSV unchanged
+):
+    """
+    Replot two-sided Van Hove (signed Δx) with linear X and log-scaled Y.
+    Compatible with outputs from linearLog_pooled_log_scaled_van_hove_per_lag().
+
+    Expects rows with:
+      - 'lag_time_frames' (int) and/or 'lag_time_s' (float)
+      - 'bin_center'
+      - 'P(Δx)'  OR 'P(|Δx|)'  (probability density column)
+      - optional 'gaussian_fit'
+    """
+    if not all_data:
+        print("No data to save.")
+        return
+
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    df = pd.DataFrame(all_data).copy()
+
+    # pick probability column robustly
+    pcol = None
+    for cand in ("P(Δx)", "P(|Δx|)", "P(dx)", "P(|dx|)"):
+        if cand in df.columns:
+            pcol = cand
+            break
+    if pcol is None:
+        raise KeyError("Expected a probability column like 'P(Δx)' or 'P(|Δx|)' not found in all_data.")
+
+    # ensure lag columns
+    if "lag_time_frames" not in df.columns:
+        if "lag_time" in df.columns:  # legacy
+            df["lag_time_frames"] = df["lag_time"].astype(int)
+        else:
+            raise KeyError("No 'lag_time_frames' (or fallback 'lag_time') in all_data.")
+    if "lag_time_s" not in df.columns:
+        df["lag_time_s"] = df["lag_time_frames"] * float(dt)
+
+    # sort for smooth lines & persist the (possibly augmented) table
+    df = df.sort_values(["lag_time_frames", "bin_center"])
+    df.to_csv(csv_filename, index=False)
+
+    # plot
+    plt.figure(figsize=(8, 5))
+    for fr, sub in df.groupby("lag_time_frames"):
+        x = sub["bin_center"].to_numpy()
+        y = sub[pcol].to_numpy()
+
+        # main curve (clip only for display on logY)
+        plt.plot(x, np.clip(y, clip_eps_for_plot, None),
+                 label=f"Δt = {sub['lag_time_s'].iloc[0]:.3f}s ({int(fr)} fr)")
+
+        # dashed fit
+        do_refit = refit_sigma or ("gaussian_fit" not in sub.columns)
+        if do_refit:
+            try:
+                H, A, mu, sigma = gauss_fit(x, y)
+                g = gauss(x, H, A, mu, sigma)
+                plt.plot(x, np.clip(g, clip_eps_for_plot, None), "--",
+                         label=f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s, σ={sigma:.2f}")
+            except Exception:
+                pass
+        else:
+            g = sub["gaussian_fit"].to_numpy()
+            # try to annotate σ (non-fatal if it fails)
+            try:
+                H, A, mu, sigma = gauss_fit(x, y)
+                lbl = f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s, σ={sigma:.2f}"
+            except Exception:
+                lbl = f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s"
+            plt.plot(x, np.clip(g, clip_eps_for_plot, None), "--", label=lbl)
+
+    plt.yscale("log")  # linear X, log Y
+    plt.xlabel("Scaled Δx (signed)")
+    plt.ylabel("P(Δx)")
+    plt.title("Van Hove (two-sided) with log-scaled Y and Gaussian fits")
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(fig_filename, dpi=300)
+    plt.close()
+
 
 # overall
 
-# init version
+# init version/linear
 data = linear_pooled_log_scaled_van_hove_per_lag(tracks_filtered) #vanhove data +cagging
-save_van_hove_results(data, csv_filename="Table 7: vanhove_scaled_fits_data.csv", fig_filename="Figure 7: vanhove_scaled_fits.png")
+save_van_hove_results_linear(data, csv_filename="Table 7: vanhove_scaled_fits_data.csv", fig_filename="Figure 7: vanhove_scaled_fits.png")
 
 data_single = linear_pooled_log_scaled_van_hove_per_lag(single_trajs)
-save_van_hove_results(data_single, csv_filename="Table 12: vanhove_scaled_fits_data_single.csv", fig_filename="Figure 12: vanhove_scaled_fits_single.png")
+save_van_hove_results_linear(data_single, csv_filename="Table 12: vanhove_scaled_fits_data_single.csv", fig_filename="Figure 12: vanhove_scaled_fits_single.png")
 
 data_double = linear_pooled_log_scaled_van_hove_per_lag(double_trajs)
-save_van_hove_results(data_double, csv_filename="Table 13: vanhove_scaled_fits_data_double.csv", fig_filename="Figure 13: vanhove_scaled_fits_double.png")
+save_van_hove_results_linear(data_double, csv_filename="Table 13: vanhove_scaled_fits_data_double.csv", fig_filename="Figure 13: vanhove_scaled_fits_double.png")
 
 
 # log-log for the one side VanHove
