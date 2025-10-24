@@ -3016,9 +3016,6 @@ def save_van_hove_results_logScaledY(
         print("No data to save.")
         return
 
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
 
     df = pd.DataFrame(all_data).copy()
 
@@ -3109,7 +3106,7 @@ data_single = linear_pooled_log_scaled_van_hove_per_lag(single_trajs)
 save_van_hove_results_linear(data_single, csv_filename="Table 12: vanhove_scaled_fits_data_single.csv", fig_filename="Figure 12: vanhove_scaled_fits_single.png")
 
 data_double = linear_pooled_log_scaled_van_hove_per_lag(double_trajs)
-save_van_hove_results(data_double, csv_filename="Table 13: vanhove_scaled_fits_data_double.csv", fig_filename="Figure 13: vanhove_scaled_fits_double.png")
+save_van_hove_results_linear(data_double, csv_filename="Table 13: vanhove_scaled_fits_data_double.csv", fig_filename="Figure 13: vanhove_scaled_fits_double.png")
 
 
 # log-log for the one side VanHove
