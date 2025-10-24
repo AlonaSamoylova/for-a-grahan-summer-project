@@ -1683,7 +1683,7 @@ def convert_tracks_to_df(tracks):
     print(f"{empty} out of {valid} empty tracks were in trajectories used to plot van Hove corrrelation")
     return pd.DataFrame(records)
 
-# alternative Methods of Cage hopping Detection
+# alternative Methods of Cage hopping Detection #UPD. Replaced by a new version (below)
 # "Many other robust estimators of location and scatter have been presented in the literature. The first such estimator was proposed by Stahel15 and Donoho16 (see also Ref 17). 
 # They defined the socalled Stahel–Donoho outlyingness of a data point" - Robust statistics for outlierdetection Peter J. Rousseeuw and Mia Hubert
 
@@ -1810,6 +1810,90 @@ def classify_hoppers(Rg_segments_per_traj, k=3.0, p=0.1, use_global=False):
         df["is_hopper"] = (df["frac_hi"] >= p)
 
     return df
+
+# simplified version to better use inside van Hove function
+# helper
+def rg_of_segment(xy):
+    # radius of gyration (2D) for points in rows of xy
+    c = xy.mean(axis=0)
+    dif = xy - c
+    return np.sqrt((dif**2).sum(axis=1).mean())
+
+def robust_rg_hopper_split(tracks, seg_size=10, alpha=0.975):
+    """
+    To plit trajectories into 'hoppers' vs 'non-hoppers' using a robust
+    2D feature + robust (diagonal) Mahalanobis distance.
+
+    Per trajectory m:
+      z1 = median(log Rg_seg),  z2 = 1.4826 * MAD(log Rg_seg)
+      D_m^2 = sum_j ((z_mj - med_j) / (1.4826*MAD_j))^2
+    Hopper if D_m^2 > chi2_{p=2, alpha}  (≈ 7.377 for alpha=0.975)
+
+    Returns: hoppers, non_hoppers, diagnostics_df
+    """
+
+    # 1) build per-trajectory log Rg segment series
+    feats = []      # (z1, z2)
+    keep_idx = []   # indices of trajectories that produced features
+    all_logRg = []  # store the logRg arrays to avoid recomputation
+    for idx, traj in enumerate(tracks):
+        if traj is None or traj.shape[0] < seg_size:
+            continue
+        # sliding, non-overlapping segments of length seg_size
+        nseg = traj.shape[0] // seg_size
+        if nseg < 1:
+            continue
+        rg_vals = []
+        for k in range(nseg):
+            seg = traj[k*seg_size:(k+1)*seg_size, :2]
+            if np.isnan(seg).any():
+                continue
+            rg_vals.append(rg_of_segment(seg))
+        rg_vals = np.array(rg_vals, float)
+        rg_vals = rg_vals[np.isfinite(rg_vals) & (rg_vals > 0)]
+        if rg_vals.size == 0:
+            continue
+        logRg = np.log(rg_vals)
+        med = np.median(logRg)
+        mad = np.median(np.abs(logRg - med))
+        z1 = med
+        z2 = 1.4826 * mad
+        feats.append([z1, z2])
+        keep_idx.append(idx)
+        all_logRg.append(logRg)
+
+    if len(feats) == 0:
+        return [], [], None  # nothing usable
+
+    Z = np.asarray(feats)                     # shape (M,2)
+    col_meds = np.median(Z, axis=0)          # robust center
+    col_mads = 1.4826 * np.median(np.abs(Z - col_meds), axis=0)
+    col_mads[col_mads == 0] = 1e-12          # guard
+
+    # robust (diagonal) Mahalanobis distance
+    RD2 = np.sum(((Z - col_meds) / col_mads)**2, axis=1)
+
+    # chi2_{2, alpha}
+    # 0.975 → ~7.377; 0.99 → ~9.210; 0.95 → ~5.991
+    chi2_cut = {0.95: 5.991, 0.975: 7.377, 0.99: 9.210}.get(alpha, 7.377)
+
+    hoppers_idx = [keep_idx[i] for i in range(len(keep_idx)) if RD2[i] > chi2_cut]
+    nonhop_idx  = [keep_idx[i] for i in range(len(keep_idx)) if RD2[i] <= chi2_cut]
+
+    hoppers = [tracks[i] for i in hoppers_idx]
+    nonhop  = [tracks[i] for i in nonhop_idx]
+
+    # opt. diagnostics to compare with your old rule
+    diag = pd.DataFrame({
+        "traj_index": keep_idx,
+        "z1_med_logRg": Z[:,0],
+        "z2_MAD_logRg": Z[:,1],
+        "RD2": RD2,
+        "is_hopper": RD2 > chi2_cut
+    })
+
+    return hoppers, nonhop, diag
+
 
 # helper to modify vanHove to take not only 3 integer vals
 # def _normalize_lags(lags_to_plot, dt=0.025, max_frames=None, units="frames"):
@@ -2308,20 +2392,30 @@ def pooled_log_scaled_van_hove_per_lag(
         df.to_csv("Table 7: vanhove_log_scaled_fits_data.csv", index=False)
 
     # --- cage hopping classification (unchanged) ---
+    # seg_size = 10
+    # Rg_hoppers, Rg_non_hoppers = [], []
+    # for traj in tracks:
+    #     if traj.shape[0] < seg_size:
+    #         continue
+    #     Rg_values = calc_Rg_seg(traj, seg_size)
+    #     if (len(Rg_values) == 0) or np.isnan(Rg_values).all():
+    #         continue
+
+    #     mean_Rg = np.nanmean(Rg_values)
+    #     std_Rg  = np.nanstd(Rg_values)
+    #     threshold = mean_Rg + 2 * std_Rg
+
+    #     (Rg_hoppers if np.any(Rg_values > threshold) else Rg_non_hoppers).append(traj)
+
+    # v2
     seg_size = 10
-    Rg_hoppers, Rg_non_hoppers = [], []
-    for traj in tracks:
-        if traj.shape[0] < seg_size:
-            continue
-        Rg_values = calc_Rg_seg(traj, seg_size)
-        if (len(Rg_values) == 0) or np.isnan(Rg_values).all():
-            continue
+    Rg_hoppers, Rg_non_hoppers, rg_diag = robust_rg_hopper_split(tracks, seg_size=seg_size, alpha=0.975)
+    # (opt.) save diagnostics for later inspection
+    try:
+        rg_diag.to_csv("TableTest_Rg_robust_threshold_diag.csv", index=False)
+    except Exception:
+        pass
 
-        mean_Rg = np.nanmean(Rg_values)
-        std_Rg  = np.nanstd(Rg_values)
-        threshold = mean_Rg + 2 * std_Rg
-
-        (Rg_hoppers if np.any(Rg_values > threshold) else Rg_non_hoppers).append(traj)
 
     return all_data, Rg_hoppers, Rg_non_hoppers
 
