@@ -2575,11 +2575,20 @@ def save_van_hove_results_linear(
         print("No data to save.")
         return
 
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
-
     df = pd.DataFrame(all_data).copy()
+    # Upd: make saver compatible with all Van Hove function v
+    # Older versions used "lag_time", newer ones use "lag_time_s" or "lag_time_frames".
+    if "lag_time" not in df.columns:
+        if "lag_time_s" in df.columns:
+            df["lag_time"] = df["lag_time_s"]
+        elif "lag_time_frames" in df.columns:
+            df["lag_time"] = df["lag_time_frames"]
+        else:
+            raise KeyError(
+                "Expected one of 'lag_time', 'lag_time_s', or 'lag_time_frames' in the data."
+            )
+    # --- end update ---
+
 
     # pick probability column robustly
     pcol = None
@@ -2655,6 +2664,19 @@ def save_van_hove_results_abs_old(all_data, csv_filename="Table_vanHove.csv", fi
 
     # to convert and sort (ensures smooth lines)
     df = pd.DataFrame(all_data).copy()
+    # Upd: make saver compatible with all Van Hove function versions
+    # Older versions used "lag_time", newer ones use "lag_time_s" or "lag_time_frames".
+    if "lag_time" not in df.columns:
+        if "lag_time_s" in df.columns:
+            df["lag_time"] = df["lag_time_s"]
+        elif "lag_time_frames" in df.columns:
+            df["lag_time"] = df["lag_time_frames"]
+        else:
+            raise KeyError(
+                "Expected one of 'lag_time', 'lag_time_s', or 'lag_time_frames' in the data."
+            )
+    #
+
     pcol = "P(Δx)" if "P(Δx)" in df.columns else ("P(|Δx|)" if "P(|Δx|)" in df.columns else None)
     if pcol is None:
         raise KeyError("Expected column 'P(Δx)' or 'P(|Δx|)' not found in all_data.")
@@ -2845,6 +2867,20 @@ def save_van_hove_results_abs(
 
     # to convert + pick probability column name robustly
     df = pd.DataFrame(all_data).copy()
+
+    # Udp: make saver compatible with all Van Hove function versions ---
+    # Older versions used "lag_time", newer ones use "lag_time_s" or "lag_time_frames".
+    if "lag_time" not in df.columns:
+        if "lag_time_s" in df.columns:
+            df["lag_time"] = df["lag_time_s"]
+        elif "lag_time_frames" in df.columns:
+            df["lag_time"] = df["lag_time_frames"]
+        else:
+            raise KeyError(
+                "Expected one of 'lag_time', 'lag_time_s', or 'lag_time_frames' in the data."
+            )
+    # 
+
     pcol = None
     for cand in ("P(|Δx|)", "P(Δx)", "P(|dx|)", "P(dx)"):
         if cand in df.columns:
@@ -2985,6 +3021,20 @@ def save_van_hove_results_logScaledY(
     import matplotlib.pyplot as plt
 
     df = pd.DataFrame(all_data).copy()
+
+    # Upd: make saver compatible with all Van Hove function v
+    # Older versions used "lag_time", newer ones use "lag_time_s" or "lag_time_frames".
+    if "lag_time" not in df.columns:
+        if "lag_time_s" in df.columns:
+            df["lag_time"] = df["lag_time_s"]
+        elif "lag_time_frames" in df.columns:
+            df["lag_time"] = df["lag_time_frames"]
+        else:
+            raise KeyError(
+                "Expected one of 'lag_time', 'lag_time_s', or 'lag_time_frames' in the data."
+            )
+    # ---
+
 
     # pick probability column robustly
     pcol = None
