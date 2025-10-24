@@ -1683,7 +1683,133 @@ def convert_tracks_to_df(tracks):
     print(f"{empty} out of {valid} empty tracks were in trajectories used to plot van Hove corrrelation")
     return pd.DataFrame(records)
 
+# alternative Methods of Cage hopping Detection
+# "Many other robust estimators of location and scatter have been presented in the literature. The first such estimator was proposed by Stahel15 and Donoho16 (see also Ref 17). 
+# They defined the socalled Stahel–Donoho outlyingness of a data point" - Robust statistics for outlierdetection Peter J. Rousseeuw and Mia Hubert
 
+# const
+EPS = 1e-12 # small epsilon to prevent division by zero
+MAD_SCALE = 1.4826  # to make MAD comparable to std under Gaussian (wiki) / Scale factor so MAD ≈ standard deviation for normal data
+
+# helpers
+
+def mad(x):
+    """
+    To compute Median Absolute Deviation (MAD):
+    a robust estimate of variability that is less sensitive to outliers than std.
+    """
+    med = np.median(x)                       # to find the median (robust center)
+    return np.median(np.abs(x - med))        # takes median of absolute deviations
+
+
+
+def robust_z_univariate(x):
+    """
+    To compute robust z-scores using median and MAD. (from article)
+    |x - median| / (1.4826*MAD + eps)
+    Values > ~3 usually indicate 'outliers' or rare events (e.g. hopping).
+    """
+    x = np.asarray(x, dtype=float)           # to ensure it's a numeric NumPy array
+    med = np.median(x)                       # Robust center of distribution
+    s = MAD_SCALE * mad(x) + EPS             # Robust scale (like std), add eps to avoid /0
+    return np.abs(x - med) / s               # Robust z-score (magnitude of deviation)
+
+def segment_outlier_fraction(log_rg_segments, k=3.0):
+    """
+    To calculate the fraction of trajectory segments that are unusually large in log(Rg).
+    Biological idea: how often does a nucleosome escape its cage?
+    """
+    x = np.asarray(log_rg_segments, dtype=float)     # to nsure array form
+    med = np.median(x)                               # typical cage size (in log-space)
+    z = robust_z_univariate(x)                       # robust deviation for each segment
+    # Count how many segments exceed threshold k AND are above median (right-tail)
+    return np.mean((z > k) & (x > med)) if x.size else 0.0
+
+def traj_level_features(log_rg_segments):
+    """
+    To compute per-trajectory summary: 'location' (median log Rg) and 'scatter' (MAD).
+    These correspond to the Stahel–Donoho 'location' and 'scatter' parameters.
+    """
+    x = np.asarray(log_rg_segments, dtype=float)
+    return np.median(x), MAD_SCALE * mad(x)          # return (location, scatter)
+
+def robust_mahalanobis_2d(features): #need because of eq. 7 in main source
+    """
+    To compute a simple robust Mahalanobis-like distance across trajectories
+    in the 2D (location, scatter) space using coordinate-wise medians and MADs.
+    Biological meaning: how unusual a trajectory is in both its cage size (location)
+    and internal variability (scatter) compared to the population.
+    """
+    Z = np.asarray(features, dtype=float)            # shape (M, 2)
+    med = np.median(Z, axis=0)                       # robust mean per column
+    scale = MAD_SCALE * np.array([mad(Z[:,0]), mad(Z[:,1])]) + EPS  # scales per axis
+    Zs = (Z - med) / scale                           # to normalize deviations per coordinate
+    D = np.sqrt(np.sum(Zs**2, axis=1))               # Euclidean/decartian distance in norm. space
+    return D
+
+# MAIN CLASSIFIER
+
+def classify_hoppers(Rg_segments_per_traj, k=3.0, p=0.1, use_global=False):
+    """
+    To identify cage-hopping trajectories using robust stats.
+    
+    Parameters:
+    Rg_segments_per_traj (list of 1D arrays):
+        Each array contains Rg values for segments of a single trajectory.
+    k (float):
+        Threshold on robust z-score (≈ 3 corresponds to 99.7% cutoff for Gaussian data).
+    p (float):
+        Minimum fraction of large-Rg segments to call a trajectory a hopper.
+    use_global (bool):
+        Whether to include global comparison (across trajectories) using robust Mahalanobis distance.
+    
+    Returns:
+    --------
+    DataFrame with:
+        traj   : trajectory index
+        frac_hi: fraction of high-Rg segments
+        med    : median log(Rg)
+        mad    : MAD log(Rg)
+        D      : robust 2D distance (if use_global)
+        is_hopper : boolean label (True if classified as hopping)
+    """
+    rows = []    # to store per-trajectory metrics
+    feats = []   # to store (location, scatter) features for later global comparison
+
+    for idx, rg in enumerate(Rg_segments_per_traj):
+        rg = np.asarray(rg, dtype=float)                          # converts to array
+        rg = rg[np.isfinite(rg) & (rg > 0)]                       # filters out NaNs/negatives
+
+        if rg.size < 3:                                           # if too short for robust stats
+            rows.append(dict(traj=idx, frac_hi=0.0, med=np.nan, mad=np.nan,
+                             D=np.nan, is_hopper=False))
+            feats.append([np.nan, np.nan])
+            continue
+
+        x = np.log(rg)                                            # Work in log-space
+        frac_hi = segment_outlier_fraction(x, k=k)                # Fraction of “escaped” segments
+        loc, sca = traj_level_features(x)                         # to get (median, scatter)
+        feats.append([loc, sca])                                  # to store feature pair
+        rows.append(dict(traj=idx, frac_hi=frac_hi, med=loc, mad=sca,
+                         D=np.nan, is_hopper=False))
+
+    df = pd.DataFrame(rows)                                       # converts to table
+
+    # opt. global step: compare all trajectories jointly in 2D (location, scatter) space
+    if use_global and len(Rg_segments_per_traj) >= 5:
+        feats_arr = np.array(feats, dtype=float)                  # to convert to NumPy array
+        mask = np.all(np.isfinite(feats_arr), axis=1)             # to keep valid ones only
+        D = np.full(len(feats_arr), np.nan)                       # preallocate
+        if np.sum(mask) >= 5:
+            D[mask] = robust_mahalanobis_2d(feats_arr[mask])      # computes distances
+        df["D"] = D                                               # sdds to DataFrame
+
+        # Chi-square 97.5% threshold for df=2 → sqrt(7.3778) ≈ 2.718
+        df["is_hopper"] = (df["frac_hi"] >= p) | (df["D"] > np.sqrt(7.3778))
+    else:
+        df["is_hopper"] = (df["frac_hi"] >= p)
+
+    return df
 
 # helper to modify vanHove to take not only 3 integer vals
 # def _normalize_lags(lags_to_plot, dt=0.025, max_frames=None, units="frames"):
