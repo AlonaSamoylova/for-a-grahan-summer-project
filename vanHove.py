@@ -1858,7 +1858,7 @@ def linear_pooled_log_scaled_van_hove_per_lag_old(tracks, lags_to_plot=[1, 10, 3
 
 def linear_pooled_log_scaled_van_hove_per_lag(
     tracks,
-    lags_to_plot=(0.1, 1.0, 30.0),   # seconds or frames (mixed allowed)
+    lags_to_plot=(0.1, 0.2, 0.5, 1, 2, 5, 30),   # seconds or frames (mixed allowed)
     bins=400,
     range_max=15.0,
     dt=0.025
@@ -2001,7 +2001,7 @@ def linearLog_pooled_log_scaled_van_hove_per_lag_old(tracks, lags_to_plot=[1, 10
 
 def linearLog_pooled_log_scaled_van_hove_per_lag(
     tracks,
-    lags_to_plot=(0.1, 1.0, 30.0),   # seconds or frames (mixed allowed)
+    lags_to_plot=(0.1, 0.2, 0.5, 1, 2, 5, 30),   # seconds or frames (mixed allowed)
     bins=400,
     range_max=15.0,
     dt=0.025
@@ -2084,7 +2084,7 @@ def linearLog_pooled_log_scaled_van_hove_per_lag(
 # same as above but with log scale + added cage hopping
 def pooled_log_scaled_van_hove_per_lag(
     tracks,
-    lags_to_plot=(0.1, 1.0, 30.0),   # seconds or frames (mixed allowed)
+    lags_to_plot=(0.1, 0.2, 0.5, 1, 2, 5, 30),   # seconds or frames (mixed allowed) #(0.1, 1.0, 30.0)
     bins=100,
     range_max=10.0,
     dt=0.025,                        # seconds per frame
@@ -3059,7 +3059,7 @@ data_single = linear_pooled_log_scaled_van_hove_per_lag(single_trajs)
 save_van_hove_results_linear(data_single, csv_filename="Table 12: vanhove_scaled_fits_data_single.csv", fig_filename="Figure 12: vanhove_scaled_fits_single.png")
 
 data_double = linear_pooled_log_scaled_van_hove_per_lag(double_trajs)
-save_van_hove_results_linear(data_double, csv_filename="Table 13: vanhove_scaled_fits_data_double.csv", fig_filename="Figure 13: vanhove_scaled_fits_double.png")
+save_van_hove_results(data_double, csv_filename="Table 13: vanhove_scaled_fits_data_double.csv", fig_filename="Figure 13: vanhove_scaled_fits_double.png")
 
 
 # log-log for the one side VanHove
