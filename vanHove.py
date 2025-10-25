@@ -982,14 +982,6 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
         if msd_fit_2seg_binned is not None:
             msd_fit_2seg_binned_full[b_fit_mask] = msd_fit_2seg_binned
 
-    # bifuracation based on 'speed
-    # NEW: MSD-based bifurcation
-    # if params_df is not None:
-    if "params_df" in locals() and params_df is not None:
-        fast_trajs, slow_trajs, summary = bifurcate_by_msd(params_df, tracks, alpha_fast=0.6)
-        summary.to_csv("Table 35_MSD_bifurcation_summary.csv", index=False)
-        print(f"MSD bifurcation complete: {len(fast_trajs)} fast, {len(slow_trajs)} slow trajectories")
-
     # plotting original MSD with fits
     # plt.figure()
     plt.figure(figsize=(6, 4.5)) #to overlay binned
@@ -1145,6 +1137,41 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
     params_df = pd.DataFrame(param_rows)
     params_df.to_csv("Table 4c: msd_fit_params.csv", index=False)
+
+        # bifuracation based on 'speed
+    # NEW: MSD-based bifurcation
+
+    # debugging
+    # --- DEBUG: verify params_df before bifurcation ---
+    if "params_df" not in locals():
+        print("[bifurcation] params_df not defined in locals()", flush=True)
+    elif params_df is None:
+        print("[bifurcation] params_df is None", flush=True)
+    elif hasattr(params_df, "empty") and params_df.empty:
+        print("[bifurcation] params_df exists but is EMPTY", flush=True)
+    else:
+        print(
+            "[bifurcation] params_df OK:",
+            f"rows={len(params_df)}, cols={list(params_df.columns)}",
+            flush=True,
+        )
+
+    # (now run it only when there’s something to run)
+    if "params_df" in locals() and (params_df is not None) and (not params_df.empty):
+        fast_trajs, slow_trajs, summary = bifurcate_by_msd(params_df, tracks, alpha_fast=0.6)
+        summary.to_csv("Table_MSD_bifurcation_summary.csv", index=False)
+        print(
+            f"[bifurcation] DONE: {len(fast_trajs)} fast, {len(slow_trajs)} slow trajectories",
+            flush=True,
+        )
+    else:
+        print("[bifurcation] skipped (no usable params_df)", flush=True)
+
+    # if params_df is not None:
+    if "params_df" in locals() and params_df is not None:
+        fast_trajs, slow_trajs, summary = bifurcate_by_msd(params_df, tracks, alpha_fast=0.6)
+        summary.to_csv("Table 35_MSD_bifurcation_summary.csv", index=False)
+        print(f"MSD bifurcation complete: {len(fast_trajs)} fast, {len(slow_trajs)} slow trajectories")
 
 
 
