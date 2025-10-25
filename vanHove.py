@@ -983,8 +983,9 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
             msd_fit_2seg_binned_full[b_fit_mask] = msd_fit_2seg_binned
 
     # bifuracation based on 'speed
-    # --- NEW: MSD-based bifurcation ---
-    if params_df is not None:
+    # NEW: MSD-based bifurcation
+    # if params_df is not None:
+    if "params_df" in locals() and params_df is not None:
         fast_trajs, slow_trajs, summary = bifurcate_by_msd(params_df, tracks, alpha_fast=0.6)
         summary.to_csv("Table 35_MSD_bifurcation_summary.csv", index=False)
         print(f"MSD bifurcation complete: {len(fast_trajs)} fast, {len(slow_trajs)} slow trajectories")
