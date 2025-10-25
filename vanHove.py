@@ -685,6 +685,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     ensemble_start = time.time()
 
     for track in tracks_filtered:  #same as above but using second function, fix added
+        timewave = (track[:, 2] - track[0, 2]) / 25.0
         msd_ensemble_temp = calc_msd_2D_ensemble_longtrack(track[:, :2], timewave, time_ratio)
         
         # Only include if not None, has more than 1 point, and not all NaNs
@@ -1165,21 +1166,6 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     params_df = pd.DataFrame(param_rows)
     params_df.to_csv("Table 4c: msd_fit_params.csv", index=False)
 
-        # bifuracation based on 'speed
-    # NEW: MSD-based bifurcation
-
-    params_bif = pd.DataFrame(param_rows_traj)
-    params_bif.to_csv("Table_MSD_bifurcation_params.csv", index=False)
-
-    fast_trajs, slow_trajs, summary = bifurcate_by_msd(params_bif,
-        tracks_filtered,      # the same list the loop iterated over
-        alpha_fast=0.6        # threshold
-    )
-    summary.to_csv("Table 35_MSD_bifurcation_summary.csv", index=False)
-    print(f"[bifurcation] DONE: {len(fast_trajs)} fast, {len(slow_trajs)} slow")
-
-
-
     all_data = []
 
     if len(tracks) >= 10:
@@ -1372,6 +1358,13 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
             # check if 2 segment fit applies
             classification = classify_powerlaw_type(alpha1, alpha2)
             # print(f"Track {i+1} classified as {classification} power law. Alpha_1 is:{alpha1:.2f} and Alpha2 is:{alpha2:.2f}")
+            # INSIDE the per-trajectory loop, just after you set `classification`
+            param_rows_traj.append({
+                "traj_id": int(i),                    # i must index tracks_filtered
+                "model": "double" if classification == "double" else "single",
+                "alpha1": float(alpha1),
+                "alpha2": float(alpha2) if classification == "double" else float("nan"),
+            })
 
             if classification == 'single':
                 # Single power-law fit
@@ -1463,6 +1456,12 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
         # plt.show()
 
         # concatenate all dataframes and save as a single file
+
+
+    params_bif = pd.DataFrame(param_rows_traj)
+    fast_trajs, slow_trajs, summary = bifurcate_by_msd(params_bif, tracks_filtered, alpha_fast=0.6)
+    summary.to_csv("Table_35_MSD_bifurcation_summary.csv", index=False)
+    print(f"[bifurcation] DONE: {len(fast_trajs)} fast, {len(slow_trajs)} slow")
 
     print("\nProcessing Summary/Debugging:")
     print(f"  Total tracks processed:       {total_tracks}")
