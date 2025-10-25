@@ -924,22 +924,6 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     tau_b_fit  = tau_b[b_fit_mask]
     msd_b_fit  = msd_b[b_fit_mask]
 
-    # per-track single power-law (on the same cleaned series)
-    try:
-        alpha_single, _ib_single = single_powerlaw_fit(msd_trimmed)
-    except Exception:
-        alpha_single = np.nan
-
-    tau_break_s = float(break1 * 0.025) if np.isfinite(break1) else np.nan
-
-    param_rows_traj.append({
-        "traj_id":      int(i),               # index in tracks_filtered
-        "model":        "double" if classification == 'double' else "single",
-        "alpha_single": float(alpha_single),
-        "alpha1":       float(alpha1),
-        "alpha2":       float(alpha2) if classification == 'double' else np.nan,
-        "tau_break_s":  tau_break_s
-    })
 
     # NEW: single power-law on the BINNED curve
     # if len(tau_b) >= 2 and np.all(tau_b > 0) and np.all(msd_b > 0):
@@ -1359,6 +1343,26 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
             classification = classify_powerlaw_type(alpha1, alpha2)
             # print(f"Track {i+1} classified as {classification} power law. Alpha_1 is:{alpha1:.2f} and Alpha2 is:{alpha2:.2f}")
             # INSIDE the per-trajectory loop, just after you set `classification`
+
+
+            # Compute single-pw slope per trajectory (so singles can be fast/slow too)
+            try:
+                alpha_single, _ = single_powerlaw_fit(msd_trimmed)
+            except Exception:
+                alpha_single = np.nan
+
+            tau_break_s = float(break1 * 0.025) if np.isfinite(break1) else np.nan
+
+            # Single place to record per-trajectory params for bifurcation
+            param_rows_traj.append({
+                "traj_id":      int(i),
+                "model":        "double" if classification == "double" else "single",
+                "alpha_single": float(alpha_single),
+                "alpha1":       float(alpha1),
+                "alpha2":       float(alpha2) if classification == "double" else np.nan,
+                "tau_break_s":  tau_break_s
+            })
+
             param_rows_traj.append({
                 "traj_id": int(i),                    # i must index tracks_filtered
                 "model": "double" if classification == "double" else "single",
