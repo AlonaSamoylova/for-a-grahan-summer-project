@@ -501,6 +501,74 @@ def log_bin_tau(tau, y, weights, bins_per_decade=10, min_pts=3, keep_first=2):
     return tau_b[order2], y_b[order2], w_b[order2], se_b[order2]
 
 
+# to differentiate fast traj. from slow
+
+def bifurcate_by_msd(params_df, tracks, alpha_fast=0.6, min_break_s=None):
+    """
+    To split trajectories into 'fast' vs 'slow' using existing single/double MSD fits.
+
+    Expected columns if available (function tolerates missing ones):
+      - 'traj_id' (int) : index to 'tracks'
+      - 'model' in {'single','double'}
+      - 'alpha_single'   (float)
+      - 'alpha1','alpha2' (float)  # for 2-seg
+      - 'tau_break_s'     (float)  # opt. (break in seconds)
+
+    Returns: fast_tracks, slow_tracks, summary_df
+    """
+    need_cols = ["traj_id", "model"]
+    for c in need_cols:
+        if c not in params_df.columns:
+            raise KeyError(f"params_df needs column '{c}'")
+
+    # make safe accessors
+    def get(row, key, default=np.nan):
+        return row[key] if key in params_df.columns and pd.notnull(row[key]) else default
+
+    fast_ids, slow_ids, rows = [], [], []
+
+    for _, r in params_df.iterrows():
+        tid  = int(r["traj_id"])
+        mdl  = str(r["model"]).lower()
+        a1   = get(r, "alpha1")
+        a2   = get(r, "alpha2")
+        asg  = get(r, "alpha_single")
+        tbrk = get(r, "tau_break_s")
+
+        # choose which alpha to judge
+        if mdl == "double" and pd.notnull(a2):
+            alpha_eff = a2
+            pass_break = True if (min_break_s is None or (pd.notnull(tbrk) and tbrk >= min_break_s)) else False
+        else:
+            alpha_eff = asg
+            pass_break = True  # no break criterion for single
+
+        is_fast = (pd.notnull(alpha_eff) and (alpha_eff >= alpha_fast) and pass_break)
+
+        rows.append({
+            "traj_id": tid,
+            "model": mdl,
+            "alpha_eff": alpha_eff,
+            "tau_break_s": tbrk,
+            "is_fast": bool(is_fast)
+        })
+        (fast_ids if is_fast else slow_ids).append(tid)
+
+    summary = pd.DataFrame(rows)
+
+    # map IDs to track arrays (skip missing/short tracks safely)
+    def select(ids):
+        out = []
+        for i in ids:
+            if i < len(tracks) and tracks[i] is not None and len(tracks[i]) >= 2:
+                out.append(tracks[i])
+        return out
+
+    fast_tracks = select(fast_ids)
+    slow_tracks = select(slow_ids)
+    return fast_tracks, slow_tracks, summary
+
+
 # main function;
 # to process and analyze track data
 
@@ -914,6 +982,12 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
         if msd_fit_2seg_binned is not None:
             msd_fit_2seg_binned_full[b_fit_mask] = msd_fit_2seg_binned
 
+    # bifuracation based on 'speed
+    # --- NEW: MSD-based bifurcation ---
+    if params_df is not None:
+        fast_trajs, slow_trajs, summary = bifurcate_by_msd(params_df, tracks, alpha_fast=0.6)
+        summary.to_csv("Table 35_MSD_bifurcation_summary.csv", index=False)
+        print(f"MSD bifurcation complete: {len(fast_trajs)} fast, {len(slow_trajs)} slow trajectories")
 
     # plotting original MSD with fits
     # plt.figure()
