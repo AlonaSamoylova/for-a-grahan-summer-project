@@ -624,6 +624,8 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     fast_trajs = []       # to store fast-mobility trajectories
     slow_trajs = []       # to store slow-mobility trajectories
     summary = None        # to hold bifurcation summary table
+    param_rows_traj = []   # one row per trajectory (for bifurcation)
+
 
 
 
@@ -921,6 +923,22 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     tau_b_fit  = tau_b[b_fit_mask]
     msd_b_fit  = msd_b[b_fit_mask]
 
+    # per-track single power-law (on the same cleaned series)
+    try:
+        alpha_single, _ib_single = single_powerlaw_fit(msd_trimmed)
+    except Exception:
+        alpha_single = np.nan
+
+    tau_break_s = float(break1 * 0.025) if np.isfinite(break1) else np.nan
+
+    param_rows_traj.append({
+        "traj_id":      int(i),               # index in tracks_filtered
+        "model":        "double" if classification == 'double' else "single",
+        "alpha_single": float(alpha_single),
+        "alpha1":       float(alpha1),
+        "alpha2":       float(alpha2) if classification == 'double' else np.nan,
+        "tau_break_s":  tau_break_s
+    })
 
     # NEW: single power-law on the BINNED curve
     # if len(tau_b) >= 2 and np.all(tau_b > 0) and np.all(msd_b > 0):
@@ -1150,10 +1168,15 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
         # bifuracation based on 'speed
     # NEW: MSD-based bifurcation
 
-    params_bif = pd.DataFrame(param_rows)
-    fast_trajs, slow_trajs, summary = bifurcate_by_msd(params_bif, tracks, alpha_fast=0.6)
+    params_bif = pd.DataFrame(param_rows_traj)
+    params_bif.to_csv("Table_MSD_bifurcation_params.csv", index=False)
+
+    fast_trajs, slow_trajs, summary = bifurcate_by_msd(params_bif,
+        tracks_filtered,      # the same list the loop iterated over
+        alpha_fast=0.6        # threshold
+    )
     summary.to_csv("Table 35_MSD_bifurcation_summary.csv", index=False)
-    print(f"MSD bifurcation complete: {len(fast_trajs)} fast, {len(slow_trajs)} slow trajectories")
+    print(f"[bifurcation] DONE: {len(fast_trajs)} fast, {len(slow_trajs)} slow")
 
 
 
