@@ -2110,6 +2110,83 @@ def normalize_lags(
     return frames, labels
 
 
+# test helpers to check van Hove plots
+
+def pdf_from_values(values, bin_edges):
+    """Width-normalized PDF (works for linear or log bins)."""
+    counts, edges = np.histogram(values, bins=bin_edges)  # no density=True
+    widths = np.diff(edges)
+    pdf = counts / (counts.sum() * widths)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    return centers, pdf
+
+def vh_consistency_check(dx, bins_linear=400, xlim_abs=15.0):
+    dx = np.asarray(dx)
+
+    # Two-sided (signed); linear bins just for display range
+    edges_signed = np.linspace(-xlim_abs, xlim_abs, bins_linear + 1)
+    xc_signed, pdf_signed = pdf_from_values(dx, edges_signed)
+
+    # One-sided (absolute); log bins to show tails (same max range)
+    abs_dx = np.abs(dx)
+    lo = max(abs_dx[abs_dx > 0].min(), 1e-3)
+    hi = min(np.percentile(abs_dx, 99), xlim_abs)
+    edges_abs_log = np.logspace(np.log10(lo), np.log10(hi), bins_linear + 1)
+    xc_abs, pdf_abs = pdf_from_values(abs_dx, edges_abs_log)
+
+    #Numeric checks
+    # A) PDFs integrate to ~1
+    i_signed = np.sum(pdf_signed * np.diff(edges_signed))
+    i_abs    = np.sum(pdf_abs    * np.diff(edges_abs_log))
+    print(f"[norm] ∫P(Δx)dx ≈ {i_signed:.5f}, ∫P(|Δx|)d|x| ≈ {i_abs:.5f}")
+
+    # B) Plateau ratio near 0: one-sided should be ~ 2× two-sided (same units)
+    mask_plateau_signed = (np.abs(xc_signed) <= 0.2)
+    plateau_signed = pdf_signed[mask_plateau_signed].mean() if mask_plateau_signed.any() else np.nan
+
+    mask_plateau_abs = (xc_abs <= 0.2)
+    plateau_abs = pdf_abs[mask_plateau_abs].mean() if mask_plateau_abs.any() else np.nan
+
+    print(f"[plateau] two-sided ~ {plateau_signed:.3e}, one-sided ~ {plateau_abs:.3e}, ratio (abs / signed) ≈ {plateau_abs/plateau_signed:.2f}")
+
+    # C) Symmetry of two-sided PDF
+    # (quick sanity: P(+x) ~ P(-x))
+    mid = len(xc_signed)//2
+    sym_n = min(mid, len(xc_signed)-mid-1, 50)
+    if sym_n > 5:
+        left  = pdf_signed[mid-sym_n:mid][::-1]
+        right = pdf_signed[mid+1:mid+1+sym_n]
+        sym_err = np.mean(np.abs(left-right)/(left+right+1e-30))
+        print(f"[symmetry] mean relative asymmetry near center ≈ {sym_err:.3f}")
+
+    # Plots from the same PDFs
+    # 1) Two-sided: linear X, log Y
+    plt.figure(figsize=(7.0, 4.5))
+    plt.semilogy(xc_signed, pdf_signed, label="two-sided P(Δx)")
+    plt.xlabel("Scaled Δx (signed)")
+    plt.ylabel("P(Δx)")
+    plt.title("Van Hove two-sided (same PDF; semi-log display)")
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("vh_check_two_sided_semilog.png", dpi=200)
+    plt.close()
+
+    # 2) One-sided: log-log
+    plt.figure(figsize=(7.0, 4.5))
+    plt.loglog(xc_abs, pdf_abs, label="one-sided P(|Δx|)")
+    plt.xlabel("Scaled |Δx|")
+    plt.ylabel("P(|Δx|)")
+    plt.title("Van Hove one-sided (same PDF; log-log display)")
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("vh_check_one_sided_loglog.png", dpi=200)
+    plt.close()
+
+    return (xc_signed, pdf_signed, xc_abs, pdf_abs)
+
+
 
 # van hove for x, custom
 tracks_filtered, single_trajs, double_trajs = CalcMSD(path)
@@ -2355,6 +2432,12 @@ def linearLog_pooled_log_scaled_van_hove_per_lag(
                 continue
 
             dx = x[fr:] - x[:-fr]
+
+            # check
+            # Example inside your loop for a chosen lag:
+            vh_consistency_check(dx, bins_linear=400, xlim_abs=15.0)
+
+
             nz = np.abs(dx[dx != 0.0])
             if nz.size == 0:
                 continue
