@@ -2576,7 +2576,7 @@ def linearLog_pooled_log_scaled_van_hove_per_lag(
 
             # check
             # Example inside your loop for a chosen lag:
-            vh_consistency_check(dx, bins_linear=400, xlim_abs=15.0)
+            # vh_consistency_check(dx, bins_linear=400, xlim_abs=15.0)
 
 
             nz = np.abs(dx[dx != 0.0])
