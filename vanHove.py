@@ -2329,6 +2329,69 @@ def vh_consistency_check_v2(dx, bins_linear=400, xlim_abs=15.0):
           f"ratios: dir/signed ≈ {plat_abs_dir/plat_signed:.2f}, "
           f"fold/signed ≈ {plat_abs_fld/plat_signed:.2f}")
 
+def vh_consistency_check_v3(dx, bins_linear=400, xlim_abs=15.0):
+    import numpy as np
+    dx = np.asarray(dx)
+
+    # --- ensure even number of bins so 0.0 is an EDGE, not a center ---
+    if bins_linear % 2 == 1:
+        bins_linear += 1
+
+    # two-sided on linear bins
+    edges_lin = np.linspace(-xlim_abs, xlim_abs, bins_linear + 1)
+    counts_signed, _ = np.histogram(dx, bins=edges_lin)   # raw counts
+    widths_lin = np.diff(edges_lin)
+    pdf_signed = counts_signed / (counts_signed.sum() * widths_lin)
+    xc_signed  = 0.5 * (edges_lin[:-1] + edges_lin[1:])
+
+    # one-sided (A) direct |dx| on linear bins [0, X]
+    abs_dx = np.abs(dx)
+    edges_abs = edges_lin[edges_lin >= 0.0]               # same edges from 0..X
+    # If for any reason 0.0 is not exactly present (floating), enforce it:
+    if edges_abs[0] > 0:
+        edges_abs = np.r_[0.0, edges_abs]
+    counts_abs_dir, _ = np.histogram(abs_dx, bins=edges_abs)
+    widths_abs = np.diff(edges_abs)
+    pdf_abs_direct = counts_abs_dir / (counts_abs_dir.sum() * widths_abs)
+    xc_abs = 0.5 * (edges_abs[:-1] + edges_abs[1:])
+
+    # one-sided (B) fold two-sided COUNTS onto [0, X] with matched bins
+    # find the index of the zero edge
+    i0 = np.argmin(np.abs(edges_lin))  # edge index nearest 0
+    # split counts around 0-edge: negatives on the left, non-negative on the right
+    counts_neg = counts_signed[:i0]    # bins entirely < 0
+    counts_pos = counts_signed[i0:]    # bins with lower edge >= 0
+    # mirror negative counts to positive order
+    counts_neg_flip = counts_neg[::-1]
+    # align lengths (they should match if 0 is an edge; trim to be safe)
+    m = min(len(counts_neg_flip), len(counts_pos))
+    counts_abs_fold = counts_pos[:m] + counts_neg_flip[:m]
+    edges_abs_fold  = edges_lin[i0:i0+m+1]  # the matching positive-side edges
+    widths_abs_fold = np.diff(edges_abs_fold)
+    pdf_abs_fold = counts_abs_fold / (counts_signed.sum() * widths_abs_fold)
+
+    # --- diagnostics ---
+    area_signed  = float(np.sum(pdf_signed     * widths_lin))
+    area_abs_dir = float(np.sum(pdf_abs_direct * widths_abs))
+    area_abs_fld = float(np.sum(pdf_abs_fold   * widths_abs_fold))
+    print(f"[norm] ∫P(Δx)dx ≈ {area_signed:.5f}, "
+          f"∫P(|Δx|)dir ≈ {area_abs_dir:.5f}, ∫P(|Δx|)fold ≈ {area_abs_fld:.5f}")
+
+    # plateau near 0 using SAME linear bins
+    m_signed = (np.abs(xc_signed) <= 0.2)
+    m_abs    = (xc_abs <= 0.2)
+    plat_signed  = np.nanmean(pdf_signed[m_signed])       if m_signed.any() else np.nan
+    plat_abs_dir = np.nanmean(pdf_abs_direct[m_abs])      if m_abs.any() else np.nan
+    # interpolate folded onto the same abs centers only for the print (no renorm)
+    pdf_abs_fold_i = np.interp(xc_abs, 0.5*(edges_abs_fold[:-1]+edges_abs_fold[1:]),
+                               pdf_abs_fold, left=np.nan, right=np.nan)
+    plat_abs_fld = np.nanmean(pdf_abs_fold_i[m_abs])      if m_abs.any() else np.nan
+
+    print(f"[plateau] two-sided ~ {plat_signed:.3e} | "
+          f"abs-direct ~ {plat_abs_dir:.3e} | abs-fold ~ {plat_abs_fld:.3e} | "
+          f"ratios: dir/signed ≈ {plat_abs_dir/plat_signed:.2f}, "
+          f"fold/signed ≈ {plat_abs_fld/plat_signed:.2f}")
+
 # van hove for x, custom
 tracks_filtered, single_trajs, double_trajs = CalcMSD(path)
 
@@ -2665,7 +2728,7 @@ def pooled_log_scaled_van_hove_per_lag(
             dx = x[fr:] - x[:-fr]
 
             #  check
-            vh_consistency_check_v2(dx, bins_linear=400, xlim_abs=15.0)
+            vh_consistency_check_v3(dx, bins_linear=400, xlim_abs=15.0)
 
             # robust per-lag scale (geometric mean of |dx| over nonzeros)
             nz = np.abs(dx[dx != 0.0])
