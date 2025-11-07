@@ -2120,7 +2120,7 @@ def pdf_from_values(values, bin_edges):
     centers = 0.5 * (edges[:-1] + edges[1:])
     return centers, pdf
 
-def vh_consistency_check(dx, bins_linear=400, xlim_abs=15.0):
+def vh_consistency_check_v1(dx, bins_linear=400, xlim_abs=15.0):
     dx = np.asarray(dx)
 
     # Two-sided (signed); linear bins just for display range
@@ -2186,6 +2186,82 @@ def vh_consistency_check(dx, bins_linear=400, xlim_abs=15.0):
 
     return (xc_signed, pdf_signed, xc_abs, pdf_abs)
 
+def vh_consistency_check(dx, bins_linear=400, xlim_abs=15.0):
+
+    dx = np.asarray(dx)
+    edges_lin = np.linspace(-xlim_abs, xlim_abs, bins_linear + 1)  # SAME bins
+
+    # Signed PDF (two-sided) on linear bins
+    cs, es = np.histogram(dx, bins=edges_lin)
+    ws = np.diff(edges_lin)
+    pdf_signed = cs / np.maximum(cs.sum() * ws, 1e-300)
+    xc_signed = 0.5 * (edges_lin[:-1] + edges_lin[1:])
+
+    # One-sided PDF derived in TWO ways using SAME binning near 0:
+    # (A) Direct abs on linear bins
+    abs_dx = np.abs(dx)
+    edges_abs_lin = np.linspace(0.0, xlim_abs, bins_linear//2 + 1)
+    ca, ea = np.histogram(abs_dx, bins=edges_abs_lin)
+    wa = np.diff(ea)
+    pdf_abs_direct = ca / np.maximum(ca.sum() * wa, 1e-300)
+    xc_abs = 0.5 * (ea[:-1] + ea[1:])
+
+    # (B) Fold the two-sided PDF onto |x| using the SAME linear bins
+    #     Map positive side of signed histogram onto abs grid, add the mirrored negative.
+    # Build a signed-grid version at |x|>0
+    pos_mask_s = xc_signed > 0
+    xc_pos = xc_signed[pos_mask_s]
+    pdf_pos = pdf_signed[pos_mask_s]
+
+    # Interpolate negative side onto positive centers (symmetric)
+    neg_mask_s = xc_signed < 0
+    xc_neg = -xc_signed[neg_mask_s]  # mirror
+    pdf_neg = pdf_signed[neg_mask_s]
+
+    # Interpolate both onto the abs centers ea
+    pdf_pos_i = np.interp(xc_abs, xc_pos, pdf_pos, left=np.nan, right=np.nan)
+    pdf_neg_i = np.interp(xc_abs, xc_neg, pdf_neg, left=np.nan, right=np.nan)
+    pdf_abs_fold = np.nan_to_num(pdf_pos_i) + np.nan_to_num(pdf_neg_i)
+
+    # --- Diagnostics ---
+    area_signed = float(np.sum(pdf_signed * ws))
+    area_abs_dir = float(np.sum(pdf_abs_direct * wa))
+    area_abs_fld = float(np.sum(pdf_abs_fold * wa))
+    print(f"[norm] ∫P(Δx)dx ≈ {area_signed:.5f}, "
+          f"∫P(|Δx|)dir ≈ {area_abs_dir:.5f}, ∫P(|Δx|)fold ≈ {area_abs_fld:.5f}")
+
+    # Plateau near 0 with SAME binning
+    m_signed = np.abs(xc_signed) <= 0.2
+    m_abs = xc_abs <= 0.2
+    plat_signed = np.nanmean(pdf_signed[m_signed]) if m_signed.any() else np.nan
+    plat_abs_dir = np.nanmean(pdf_abs_direct[m_abs]) if m_abs.any() else np.nan
+    plat_abs_fld = np.nanmean(pdf_abs_fold[m_abs]) if m_abs.any() else np.nan
+    print(f"[plateau] two-sided ~ {plat_signed:.3e} | "
+          f"abs-direct ~ {plat_abs_dir:.3e} | abs-fold ~ {plat_abs_fld:.3e} | "
+          f"ratios: dir/signed ≈ {plat_abs_dir/plat_signed:.2f}, "
+          f"fold/signed ≈ {plat_abs_fld/plat_signed:.2f}")
+
+    # --- Plots (for sanity) ---
+    # Semi-log two-sided
+    plt.figure(figsize=(6.6,4.2))
+    plt.semilogy(xc_signed, pdf_signed, label="two-sided (linear bins)")
+    plt.xlabel("Δx"); plt.ylabel("P(Δx)"); plt.title("Two-sided (semi-log)")
+    plt.grid(True, which="both", ls="--", alpha=0.5); plt.legend(); plt.tight_layout()
+    plt.savefig("vh_check_two_sided_semilog_matched.png", dpi=200); plt.close()
+
+    # Log-log one-sided (for visualization): you can still use log bins here separately
+    lo = max(abs_dx[abs_dx>0].min(), 1e-3); hi = min(np.percentile(abs_dx,99), xlim_abs)
+    edges_abs_log = np.logspace(np.log10(lo), np.log10(hi), bins_linear + 1)
+    ca_log, ea_log = np.histogram(abs_dx, bins=edges_abs_log)
+    wa_log = np.diff(ea_log)
+    pdf_abs_log = ca_log / np.maximum(ca_log.sum() * wa_log, 1e-300)
+    xc_abs_log = 0.5 * (ea_log[:-1] + ea_log[1:])
+
+    plt.figure(figsize=(6.6,4.2))
+    plt.loglog(xc_abs_log, pdf_abs_log, label="one-sided (log bins)")
+    plt.xlabel("|Δx|"); plt.ylabel("P(|Δx|)"); plt.title("One-sided (log–log)")
+    plt.grid(True, which="both", ls="--", alpha=0.5); plt.legend(); plt.tight_layout()
+    plt.savefig("vh_check_one_sided_loglog_visual.png", dpi=200); plt.close()
 
 
 # van hove for x, custom
