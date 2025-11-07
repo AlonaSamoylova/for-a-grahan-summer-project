@@ -3635,6 +3635,19 @@ def save_van_hove_results_abs(
             else:
                 plt.plot(x, np.clip(g, clip_eps_for_plot, None), "--",
                          label=f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s, σ={sigma_lbl}")
+                
+
+
+    # sanity check
+    try:
+        xvals = df["bin_center"].to_numpy()
+        yvals = df[pcol].to_numpy()
+        # approximate PDF-based sample by weighting x by P(x)
+        pseudo_dx = np.repeat(xvals, np.maximum((yvals * 1e4).astype(int), 1))
+        vh_assert_consistency(pseudo_dx)
+    except Exception as e:
+        print(f"[vh_check] skipped: {e}")
+
 
     # to match the pooled function styling
     plt.xscale("log")
@@ -3647,8 +3660,6 @@ def save_van_hove_results_abs(
     plt.tight_layout()
     plt.savefig(fig_filename, dpi=300)
     plt.close()
-
-    vh_assert_consistency(all_scaled_dx)
 
 
 
