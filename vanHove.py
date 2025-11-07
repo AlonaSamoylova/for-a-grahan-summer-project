@@ -2191,7 +2191,7 @@ def vh_consistency_check(dx, bins_linear=400, xlim_abs=15.0):
     dx = np.asarray(dx)
     edges_lin = np.linspace(-xlim_abs, xlim_abs, bins_linear + 1)  # SAME bins
 
-    # Signed PDF (two-sided) on linear bins
+    # signed PDF (two-sided) on linear bins
     cs, es = np.histogram(dx, bins=edges_lin)
     ws = np.diff(edges_lin)
     pdf_signed = cs / np.maximum(cs.sum() * ws, 1e-300)
@@ -2213,17 +2213,17 @@ def vh_consistency_check(dx, bins_linear=400, xlim_abs=15.0):
     xc_pos = xc_signed[pos_mask_s]
     pdf_pos = pdf_signed[pos_mask_s]
 
-    # Interpolate negative side onto positive centers (symmetric)
+    # To interpolate negative side onto positive centers (symmetric)
     neg_mask_s = xc_signed < 0
     xc_neg = -xc_signed[neg_mask_s]  # mirror
     pdf_neg = pdf_signed[neg_mask_s]
 
-    # Interpolate both onto the abs centers ea
+    # to interpolate both onto the abs centers ea
     pdf_pos_i = np.interp(xc_abs, xc_pos, pdf_pos, left=np.nan, right=np.nan)
     pdf_neg_i = np.interp(xc_abs, xc_neg, pdf_neg, left=np.nan, right=np.nan)
     pdf_abs_fold = np.nan_to_num(pdf_pos_i) + np.nan_to_num(pdf_neg_i)
 
-    # --- Diagnostics ---
+    # Diagnostics
     area_signed = float(np.sum(pdf_signed * ws))
     area_abs_dir = float(np.sum(pdf_abs_direct * wa))
     area_abs_fld = float(np.sum(pdf_abs_fold * wa))
@@ -2241,7 +2241,7 @@ def vh_consistency_check(dx, bins_linear=400, xlim_abs=15.0):
           f"ratios: dir/signed ≈ {plat_abs_dir/plat_signed:.2f}, "
           f"fold/signed ≈ {plat_abs_fld/plat_signed:.2f}")
 
-    # --- Plots (for sanity) ---
+    # Plots (for sanity) 
     # Semi-log two-sided
     plt.figure(figsize=(6.6,4.2))
     plt.semilogy(xc_signed, pdf_signed, label="two-sided (linear bins)")
@@ -2277,14 +2277,14 @@ def vh_consistency_check_v2(dx, bins_linear=400, xlim_abs=15.0):
 
     dx = np.asarray(dx)
 
-    # --- Two-sided on linear bins (source of truth) ---
+    # two-sided on linear bins (source of truth)
     edges_lin = np.linspace(-xlim_abs, xlim_abs, bins_linear + 1)
     cs, _ = np.histogram(dx, bins=edges_lin)
     ws = np.diff(edges_lin)
     pdf_signed = cs / np.maximum(cs.sum() * ws, 1e-300)
     xc_signed = 0.5 * (edges_lin[:-1] + edges_lin[1:])
 
-    # --- One-sided, (A) direct abs on matched linear bins [0, xlim] ---
+    # One-sided, (A) direct abs on matched linear bins [0, xlim]
     abs_dx = np.abs(dx)
     edges_abs_lin = np.linspace(0.0, xlim_abs, bins_linear//2 + 1)
     ca, _ = np.histogram(abs_dx, bins=edges_abs_lin)
@@ -2292,7 +2292,7 @@ def vh_consistency_check_v2(dx, bins_linear=400, xlim_abs=15.0):
     pdf_abs_direct = ca / np.maximum(ca.sum() * wa, 1e-300)
     xc_abs = 0.5 * (edges_abs_lin[:-1] + edges_abs_lin[1:])
 
-    # --- One-sided, (B) fold two-sided PDF -> |x| (with sorting before interp) ---
+    # One-sided, (B) fold two-sided PDF -> |x| (with sorting before interp)
     pos_mask = xc_signed > 0
     xc_pos = xc_signed[pos_mask]
     pdf_pos = pdf_signed[pos_mask]
@@ -2311,7 +2311,7 @@ def vh_consistency_check_v2(dx, bins_linear=400, xlim_abs=15.0):
     pdf_neg_i = np.interp(xc_abs, xc_neg, pdf_neg, left=np.nan, right=np.nan)
     pdf_abs_fold = np.nan_to_num(pdf_pos_i) + np.nan_to_num(pdf_neg_i)
 
-    # --- Diagnostics ---
+    # Diagnostics
     area_signed = float(np.sum(pdf_signed * ws))
     area_abs_dir = float(np.sum(pdf_abs_direct * wa))
     area_abs_fld = float(np.sum(pdf_abs_fold   * wa))
@@ -2338,8 +2338,6 @@ def vh_assert_consistency(dx, tol_area=1e-2, tol_ratio=0.15, bins=400, xlim_abs=
       - ∫P(|Δx|) ≈ 1 (both direct and folded)
       - plateau(|Δx|)/plateau(Δx) ≈ 2
     """
-
-    import numpy as np
 
     dx = np.asarray(dx)
     if bins % 2 == 1:
@@ -2670,7 +2668,7 @@ def linearLog_pooled_log_scaled_van_hove_per_lag_old(tracks, lags_to_plot=[1, 10
 
 def linearLog_pooled_log_scaled_van_hove_per_lag(
     tracks,
-    lags_to_plot=(0.1, 0.15, 0.22, 0.33, 0.5, 0.75, 1, 1.5, 2.2, 3.3, 5, 10, 30),   # seconds or frames (mixed allowed)
+    lags_to_plot=(0.1, 0.15,  1.5, 3, 5, 10, 30),   # seconds or frames (mixed allowed) # 0.22, 0.33, 0.5, 0.75, 1, 1.5
     bins=400,
     range_max=15.0,
     dt=0.025
