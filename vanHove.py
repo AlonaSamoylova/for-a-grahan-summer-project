@@ -2263,6 +2263,71 @@ def vh_consistency_check(dx, bins_linear=400, xlim_abs=15.0):
     plt.grid(True, which="both", ls="--", alpha=0.5); plt.legend(); plt.tight_layout()
     plt.savefig("vh_check_one_sided_loglog_visual.png", dpi=200); plt.close()
 
+# new fast version
+def vh_consistency_check_v2(dx, bins_linear=400, xlim_abs=15.0):
+    """
+    Fast numeric check (no plotting):
+    - Two-sided P(Δx) on linear bins
+    - One-sided P(|Δx|) computed two ways on matched linear bins:
+        (A) direct abs histogram
+        (B) fold two-sided PDF (with proper sorting before interp)
+    Prints: normalization, plateau values, and ratios.
+    """
+    import numpy as np
+
+    dx = np.asarray(dx)
+
+    # --- Two-sided on linear bins (source of truth) ---
+    edges_lin = np.linspace(-xlim_abs, xlim_abs, bins_linear + 1)
+    cs, _ = np.histogram(dx, bins=edges_lin)
+    ws = np.diff(edges_lin)
+    pdf_signed = cs / np.maximum(cs.sum() * ws, 1e-300)
+    xc_signed = 0.5 * (edges_lin[:-1] + edges_lin[1:])
+
+    # --- One-sided, (A) direct abs on matched linear bins [0, xlim] ---
+    abs_dx = np.abs(dx)
+    edges_abs_lin = np.linspace(0.0, xlim_abs, bins_linear//2 + 1)
+    ca, _ = np.histogram(abs_dx, bins=edges_abs_lin)
+    wa = np.diff(edges_abs_lin)
+    pdf_abs_direct = ca / np.maximum(ca.sum() * wa, 1e-300)
+    xc_abs = 0.5 * (edges_abs_lin[:-1] + edges_abs_lin[1:])
+
+    # --- One-sided, (B) fold two-sided PDF -> |x| (with sorting before interp) ---
+    pos_mask = xc_signed > 0
+    xc_pos = xc_signed[pos_mask]
+    pdf_pos = pdf_signed[pos_mask]
+    i_pos = np.argsort(xc_pos)       # <- NEW: ensure increasing
+    xc_pos = xc_pos[i_pos]
+    pdf_pos = pdf_pos[i_pos]
+
+    neg_mask = xc_signed < 0
+    xc_neg = -xc_signed[neg_mask]    # mirror to positive
+    pdf_neg =  pdf_signed[neg_mask]
+    i_neg = np.argsort(xc_neg)       # <- NEW: ensure increasing
+    xc_neg = xc_neg[i_neg]
+    pdf_neg = pdf_neg[i_neg]
+
+    pdf_pos_i = np.interp(xc_abs, xc_pos, pdf_pos, left=np.nan, right=np.nan)
+    pdf_neg_i = np.interp(xc_abs, xc_neg, pdf_neg, left=np.nan, right=np.nan)
+    pdf_abs_fold = np.nan_to_num(pdf_pos_i) + np.nan_to_num(pdf_neg_i)
+
+    # --- Diagnostics ---
+    area_signed = float(np.sum(pdf_signed * ws))
+    area_abs_dir = float(np.sum(pdf_abs_direct * wa))
+    area_abs_fld = float(np.sum(pdf_abs_fold   * wa))
+    print(f"[norm] ∫P(Δx)dx ≈ {area_signed:.5f}, "
+          f"∫P(|Δx|)dir ≈ {area_abs_dir:.5f}, ∫P(|Δx|)fold ≈ {area_abs_fld:.5f}")
+
+    # plateau near 0 (same linear bins on both sides)
+    m_signed = (np.abs(xc_signed) <= 0.2)
+    m_abs    = (xc_abs <= 0.2)
+    plat_signed  = np.nanmean(pdf_signed[m_signed])  if m_signed.any() else np.nan
+    plat_abs_dir = np.nanmean(pdf_abs_direct[m_abs]) if m_abs.any() else np.nan
+    plat_abs_fld = np.nanmean(pdf_abs_fold[m_abs])   if m_abs.any() else np.nan
+    print(f"[plateau] two-sided ~ {plat_signed:.3e} | "
+          f"abs-direct ~ {plat_abs_dir:.3e} | abs-fold ~ {plat_abs_fld:.3e} | "
+          f"ratios: dir/signed ≈ {plat_abs_dir/plat_signed:.2f}, "
+          f"fold/signed ≈ {plat_abs_fld/plat_signed:.2f}")
 
 # van hove for x, custom
 tracks_filtered, single_trajs, double_trajs = CalcMSD(path)
@@ -2598,6 +2663,9 @@ def pooled_log_scaled_van_hove_per_lag(
                 continue
 
             dx = x[fr:] - x[:-fr]
+
+            #  check
+            vh_consistency_check_v2(dx, bins_linear=400, xlim_abs=15.0)
 
             # robust per-lag scale (geometric mean of |dx| over nonzeros)
             nz = np.abs(dx[dx != 0.0])
