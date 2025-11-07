@@ -2329,6 +2329,74 @@ def vh_consistency_check_v2(dx, bins_linear=400, xlim_abs=15.0):
           f"ratios: dir/signed ≈ {plat_abs_dir/plat_signed:.2f}, "
           f"fold/signed ≈ {plat_abs_fld/plat_signed:.2f}")
 
+# same for savers
+def vh_assert_consistency(dx, tol_area=1e-2, tol_ratio=0.15, bins=400, xlim_abs=15.0):
+    """
+    Lightweight consistency check for Van Hove functions.
+    Confirms that:
+      - ∫P(Δx)dx ≈ 1
+      - ∫P(|Δx|) ≈ 1 (both direct and folded)
+      - plateau(|Δx|)/plateau(Δx) ≈ 2
+    """
+
+    import numpy as np
+
+    dx = np.asarray(dx)
+    if bins % 2 == 1:
+        bins += 1
+
+    # Two-sided PDF
+    edges = np.linspace(-xlim_abs, xlim_abs, bins + 1)
+    counts_signed, _ = np.histogram(dx, bins=edges)
+    widths = np.diff(edges)
+    pdf_signed = counts_signed / (counts_signed.sum() * widths)
+    xc_signed = 0.5 * (edges[:-1] + edges[1:])
+
+    # One-sided (direct)
+    abs_dx = np.abs(dx)
+    edges_abs = edges[edges >= 0.0]
+    if edges_abs[0] > 0:
+        edges_abs = np.r_[0.0, edges_abs]
+    counts_abs, _ = np.histogram(abs_dx, bins=edges_abs)
+    widths_abs = np.diff(edges_abs)
+    pdf_abs = counts_abs / (counts_abs.sum() * widths_abs)
+    xc_abs = 0.5 * (edges_abs[:-1] + edges_abs[1:])
+
+    # Folded
+    i0 = np.argmin(np.abs(edges))
+    neg, pos = counts_signed[:i0], counts_signed[i0:]
+    neg_flip = neg[::-1]
+    m = min(len(neg_flip), len(pos))
+    counts_fold = pos[:m] + neg_flip[:m]
+    edges_fold = edges[i0:i0+m+1]
+    widths_fold = np.diff(edges_fold)
+    pdf_fold = counts_fold / (counts_signed.sum() * widths_fold)
+
+    # Integrals
+    area_signed = float(np.sum(pdf_signed * widths))
+    area_abs = float(np.sum(pdf_abs * widths_abs))
+    area_fold = float(np.sum(pdf_fold * widths_fold))
+
+    # Plateaus near zero
+    m_signed = np.abs(xc_signed) <= 0.2
+    m_abs = xc_abs <= 0.2
+    plat_signed = np.nanmean(pdf_signed[m_signed])
+    plat_abs = np.nanmean(pdf_abs[m_abs])
+    plat_fold = np.nanmean(pdf_fold[m_abs])
+
+    # Print summary
+    print(f"[vh_check] areas: signed={area_signed:.5f}, abs={area_abs:.5f}, fold={area_fold:.5f}")
+    print(f"[vh_check] plateaus: signed={plat_signed:.3e}, abs={plat_abs:.3e}, fold={plat_fold:.3e}")
+    print(f"[vh_check] ratios: abs/signed={plat_abs/plat_signed:.2f}, fold/signed={plat_fold/plat_signed:.2f}")
+
+    # Simple flag
+    if (abs(area_signed-1)>tol_area or abs(area_abs-1)>tol_area or abs(area_fold-1)>tol_area
+        or abs(plat_abs/plat_signed - 2) > tol_ratio
+        or abs(plat_fold/plat_signed - 2) > tol_ratio):
+        print("⚠️  [WARNING] Van Hove consistency outside tolerance.\n")
+    else:
+        print("✅ Van Hove normalization and symmetry consistent.\n")
+
 def vh_consistency_check_v3(dx, bins_linear=400, xlim_abs=15.0):
     import numpy as np
     dx = np.asarray(dx)
@@ -2727,8 +2795,8 @@ def pooled_log_scaled_van_hove_per_lag(
 
             dx = x[fr:] - x[:-fr]
 
-            #  check
-            vh_consistency_check_v3(dx, bins_linear=400, xlim_abs=15.0)
+            # #  check
+            # vh_consistency_check_v3(dx, bins_linear=400, xlim_abs=15.0)
 
             # robust per-lag scale (geometric mean of |dx| over nonzeros)
             nz = np.abs(dx[dx != 0.0])
@@ -3579,6 +3647,9 @@ def save_van_hove_results_abs(
     plt.tight_layout()
     plt.savefig(fig_filename, dpi=300)
     plt.close()
+
+    vh_assert_consistency(all_scaled_dx)
+
 
 
 def save_van_hove_results_logScaledY_old(all_data, csv_filename="Table_vanHove.csv", fig_filename="Figure_vanHove.png"):
