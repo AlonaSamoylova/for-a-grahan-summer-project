@@ -3946,7 +3946,7 @@ def save_van_hove_results_logScaledY_notLimited(
     plt.yscale("log")  # linear X, log Y
     plt.xlabel("Scaled Δx (signed)")
     plt.ylabel("P(Δx)")
-    ax.set_ylim(1e-5, 10)   # tighter range
+    # ax.set_ylim(1e-5, 10)   # tighter range
     plt.title("Van Hove (two-sided) with log-scaled Y and Gaussian fits")
     plt.grid(True, which="both", ls="--", alpha=0.5)
     plt.legend()
