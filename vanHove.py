@@ -3240,7 +3240,7 @@ def save_van_hove_results(all_data, csv_filename="Table_vanHove.csv", fig_filena
     plt.savefig(fig_filename, dpi=300)
     plt.close()
 
-def save_van_hove_results_linear(
+def save_van_hove_results_linear_difColors(
     all_data,
     csv_filename="Table_vanHove_linear.csv",
     fig_filename="Figure_vanHove_linear.png",
@@ -3326,6 +3326,118 @@ def save_van_hove_results_linear(
             except Exception:
                 lbl = f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s"
             plt.plot(x, g, "--", label=lbl)
+
+    plt.xlabel("Scaled Δx (signed)")
+    plt.ylabel("P(Δx)")
+    plt.title("Van Hove (two-sided) with Gaussian fits (linear axes)")
+    plt.grid(True, ls="--", alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(fig_filename, dpi=300)
+    plt.close()
+
+def save_van_hove_results_linear(
+    all_data,
+    csv_filename="Table_vanHove_linear.csv",
+    fig_filename="Figure_vanHove_linear.png",
+    dt=0.025,              # used if lag_time_s missing
+    refit_sigma=False      # True => refit sigma from (x,y)
+):
+    """
+    Replot two-sided Van Hove (signed Δx) with linear X and linear Y.
+    Compatible with outputs from linear_pooled_log_scaled_van_hove_per_lag().
+
+    Expects rows with:
+      - 'lag_time_frames' (int) and/or 'lag_time_s' (float)
+      - 'bin_center'
+      - 'P(Δx)' OR 'P(|Δx|)' (probability density column)
+      - optional 'gaussian_fit'
+    """
+    if not all_data:
+        print("No data to save.")
+        return
+
+    df = pd.DataFrame(all_data).copy()
+    # Upd: make saver compatible with all Van Hove function versions —
+    if "lag_time" not in df.columns:
+        if "lag_time_s" in df.columns:
+            df["lag_time"] = df["lag_time_s"]
+        elif "lag_time_frames" in df.columns:
+            df["lag_time"] = df["lag_time_frames"]
+        else:
+            raise KeyError(
+                "Expected one of 'lag_time', 'lag_time_s', or 'lag_time_frames' in the data."
+            )
+    # --- end update ---
+
+    # pick probability column robustly
+    pcol = None
+    for cand in ("P(Δx)", "P(|Δx|)", "P(dx)", "P(|dx|)"):
+        if cand in df.columns:
+            pcol = cand
+            break
+    if pcol is None:
+        raise KeyError("Expected a probability column like 'P(Δx)' or 'P(|Δx|)' not found in all_data.")
+
+    # ensure lag columns
+    if "lag_time_frames" not in df.columns:
+        if "lag_time" in df.columns:
+            df["lag_time_frames"] = df["lag_time"].astype(int)
+        else:
+            raise KeyError("No 'lag_time_frames' in all_data.")
+    if "lag_time_s" not in df.columns:
+        df["lag_time_s"] = df["lag_time_frames"] * float(dt)
+
+    # sort & persist
+    df = df.sort_values(["lag_time_frames", "bin_center"])
+    df.to_csv(csv_filename, index=False)
+
+    # plot
+    plt.figure(figsize=(8, 5))
+    for fr, sub in df.groupby("lag_time_frames"):
+
+        x = sub["bin_center"].to_numpy()
+        y = sub[pcol].to_numpy()
+
+        # main curve  --------------------------------------------------- #
+        line, = plt.plot(    #new
+            x,
+            y,
+            label=f"Δt = {sub['lag_time_s'].iloc[0]:.3f}s ({int(fr)} fr)"
+        )  #new
+        color = line.get_color()   #new  extract chosen color
+
+        # dashed fit  --------------------------------------------------- #
+        do_refit = refit_sigma or ("gaussian_fit" not in sub.columns)
+        if do_refit:
+            try:
+                H, A, mu, sigma = gauss_fit(x, y)
+                g = gauss(x, H, A, mu, sigma)
+                plt.plot(
+                    x,
+                    g,
+                    "--",             #new
+                    color=color,     #new  match main curve color
+                    label=f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s, σ={sigma:.2f}"
+                )  #new
+            except Exception:
+                pass
+        else:
+            g = sub["gaussian_fit"].to_numpy()
+            # annotate σ if possible
+            try:
+                H, A, mu, sigma = gauss_fit(x, y)
+                lbl = f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s, σ={sigma:.2f}"
+            except Exception:
+                lbl = f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s"
+
+            plt.plot(
+                x,
+                g,
+                "--",             #new
+                color=color,     #new
+                label=lbl
+            )  #new
 
     plt.xlabel("Scaled Δx (signed)")
     plt.ylabel("P(Δx)")
