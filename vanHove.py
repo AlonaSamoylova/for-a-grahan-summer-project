@@ -2757,7 +2757,7 @@ def linearLog_pooled_log_scaled_van_hove_per_lag(
 # same as above but with log scale + added cage hopping
 def pooled_log_scaled_van_hove_per_lag(
     tracks,
-    lags_to_plot=(0.1, 0.15, 0.22, 0.33, 0.5, 0.75, 1, 1.5, 2.2, 3.3, 5, 10, 30),   # seconds or frames (mixed allowed) #(0.1, 1.0, 30.0)
+    lags_to_plot= (0.1, 0.15,  1.5, 3, 5, 10, 30),   # seconds or frames (mixed allowed) #(0.1, 1.0, 30.0) (0.1, 0.15, 0.22, 0.33, 0.5, 0.75, 1, 1.5, 2.2, 3.3, 5, 10, 30)
     bins=100,
     range_max=10.0,
     dt=0.025,                        # seconds per frame
