@@ -3522,7 +3522,7 @@ def save_van_hove_results_abs_v1(
     plt.savefig(fig_filename, dpi=300)
     plt.close()
 
-def save_van_hove_results_abs(
+def save_van_hove_results_abs_notLimited(
     all_data,
     csv_filename="Table_vanHove_abs.csv",
     fig_filename="Figure_vanHove_abs.png",
@@ -3650,6 +3650,164 @@ def save_van_hove_results_abs(
     # to match the pooled function styling
     plt.xscale("log")
     plt.yscale("log")
+ # tighter range
+    plt.xlabel("Scaled |Δx|")
+    plt.ylabel("P(|Δx|)")
+    plt.title("Van Hove (log–log) per lag with Gaussian fits")
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(fig_filename, dpi=300)
+    plt.close()
+
+def save_van_hove_results_abs(
+    all_data,
+    csv_filename="Table_vanHove_abs.csv",
+    fig_filename="Figure_vanHove_abs.png",
+    dt=0.025,                 # only used for labels if lag_time_s is missing
+    refit_sigma=False,        # True => refit sigma from (x,y) instead of trusting stored gaussian_fit
+    clip_eps_for_plot=1e-12   # avoid log(0) on display; CSV stays unmodified
+):
+    """
+    Replot one-sided Van Hove (|Δx|) results to match the in-function log–log look.
+    Works with data produced by the new pooled_* function(s).
+
+    Expects (rows) with:
+      - 'lag_time_frames' (int) and/or 'lag_time_s' (float)
+      - 'bin_center'
+      - 'P(|Δx|)'  OR 'P(Δx)'    (probability density column name)
+      - optional 'gaussian_fit'
+
+    Behavior:
+      - Sorts by (lag, bin_center) for smooth lines
+      - Labels show both seconds and frames: Δt = {secs:.3f}s ({frames} fr)
+      - Plots log–log axes
+      - If refit_sigma=True OR no 'gaussian_fit' column, refits Gaussian for dashed curve
+      - Otherwise uses stored 'gaussian_fit' as the dashed curve
+    """
+    if not all_data:
+        print("No data to save.")
+        return
+
+    # to convert + pick probability column name robustly
+    df = pd.DataFrame(all_data).copy()
+
+    # Udp: make saver compatible with all Van Hove function versions ---
+    # Older versions used "lag_time", newer ones use "lag_time_s" or "lag_time_frames".
+    if "lag_time" not in df.columns:
+        if "lag_time_s" in df.columns:
+            df["lag_time"] = df["lag_time_s"]
+        elif "lag_time_frames" in df.columns:
+            df["lag_time"] = df["lag_time_frames"]
+        else:
+            raise KeyError(
+                "Expected one of 'lag_time', 'lag_time_s', or 'lag_time_frames' in the data."
+            )
+    # 
+
+    pcol = None
+    for cand in ("P(|Δx|)", "P(Δx)", "P(|dx|)", "P(dx)"):
+        if cand in df.columns:
+            pcol = cand
+            break
+    if pcol is None:
+        raise KeyError("Expected a probability column like 'P(|Δx|)' or 'P(Δx)' not found in all_data.")
+
+    # to ensure lag columns exist (at least frames; seconds for nicer labels)
+    has_frames = "lag_time_frames" in df.columns
+    has_secs   = "lag_time_s" in df.columns
+    if not has_frames and "lag_time" in df.columns:
+        # back-compat: older code used 'lag_time' (frames)
+        df["lag_time_frames"] = df["lag_time"].astype(int)
+        has_frames = True
+    if not has_secs and has_frames:
+        df["lag_time_s"] = df["lag_time_frames"] * float(dt)
+        has_secs = True
+
+    if not has_frames:
+        raise KeyError("No 'lag_time_frames' (or fallback 'lag_time') in all_data; cannot group by lag.")
+    if "bin_center" not in df.columns:
+        raise KeyError("No 'bin_center' in all_data; cannot replot curves.")
+
+    # to sort for smooth lines and save the (possibly augmented) table
+    df = df.sort_values(["lag_time_frames", "bin_center"])
+    df.to_csv(csv_filename, index=False)
+
+    #plotingt
+    plt.figure(figsize=(8, 5))
+
+    # to group by frames so legends are stable; format label with both units
+    for fr, sub in df.groupby("lag_time_frames"):
+        x = sub["bin_center"].to_numpy()
+        y = sub[pcol].to_numpy()
+
+        # Main curve
+        line, = plt.plot(  #new
+            x,
+            np.clip(y, clip_eps_for_plot, None),
+            label=f"Δt = {sub['lag_time_s'].iloc[0]:.3f}s ({int(fr)} fr)"
+        )  #new
+        color = line.get_color()  #new
+
+        # Dashed curve: use stored 'gaussian_fit' if available and we don't refit
+        do_refit = refit_sigma or ("gaussian_fit" not in sub.columns)
+        if do_refit:
+            try:
+                H, A, mu, sigma = gauss_fit(x, y)
+                g = gauss(x, H, A, mu, sigma)
+                plt.plot(
+                    x,
+                    np.clip(g, clip_eps_for_plot, None),
+                    "--",                     #new
+                    color=color,             #new same color as data
+                    label=f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s, σ={sigma:.2f}"
+                )  #new
+            except Exception:
+                # if fitting fails, skip dashed curve 
+                pass
+        else:
+            g = sub["gaussian_fit"].to_numpy()
+            # try to recover sigma to annotate legend (non-fatal if it fails)
+            sigma_lbl = None
+            try:
+                H, A, mu, sigma = gauss_fit(x, y)
+                sigma_lbl = f"{sigma:.2f}"
+            except Exception:
+                pass
+            if sigma_lbl is None:
+                plt.plot(
+                    x,
+                    np.clip(g, clip_eps_for_plot, None),
+                    "--",                 #new
+                    color=color,         #new
+                    label=f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s"
+                )  #new
+            else:
+                plt.plot(
+                    x,
+                    np.clip(g, clip_eps_for_plot, None),
+                    "--",                 #new
+                    color=color,         #new
+                    label=f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s, σ={sigma_lbl}"
+                )  #new
+                
+
+
+    # sanity check
+    try:
+        xvals = df["bin_center"].to_numpy()
+        yvals = df[pcol].to_numpy()
+        # approximate PDF-based sample by weighting x by P(x)
+        pseudo_dx = np.repeat(xvals, np.maximum((yvals * 1e4).astype(int), 1))
+        vh_assert_consistency(pseudo_dx)
+    except Exception as e:
+        print(f"[vh_check] skipped: {e}")
+
+
+    # to match the pooled function styling
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.ylim(1e-3, 10)  #new tighter y-range to highlight deviations
     plt.xlabel("Scaled |Δx|")
     plt.ylabel("P(|Δx|)")
     plt.title("Van Hove (log–log) per lag with Gaussian fits")
@@ -3694,7 +3852,7 @@ def save_van_hove_results_logScaledY_old(all_data, csv_filename="Table_vanHove.c
     plt.savefig(fig_filename, dpi=300)
     plt.close()
 
-def save_van_hove_results_logScaledY(
+def save_van_hove_results_logScaledY_notLimited(
     all_data,
     csv_filename="Table_vanHove_logY.csv",
     fig_filename="Figure_vanHove_logY.png",
@@ -3788,6 +3946,7 @@ def save_van_hove_results_logScaledY(
     plt.yscale("log")  # linear X, log Y
     plt.xlabel("Scaled Δx (signed)")
     plt.ylabel("P(Δx)")
+    ax.set_ylim(1e-5, 10)   # tighter range
     plt.title("Van Hove (two-sided) with log-scaled Y and Gaussian fits")
     plt.grid(True, which="both", ls="--", alpha=0.5)
     plt.legend()
@@ -3795,6 +3954,123 @@ def save_van_hove_results_logScaledY(
     plt.savefig(fig_filename, dpi=300)
     plt.close()
 
+def save_van_hove_results_logScaledY(
+    all_data,
+    csv_filename="Table_vanHove_logY.csv",
+    fig_filename="Figure_vanHove_logY.png",
+    dt=0.025,                 # used if lag_time_s missing
+    refit_sigma=False,        # True => refit sigma from (x,y)
+    clip_eps_for_plot=1e-12   # avoid log(0) on display; CSV unchanged
+):
+    """
+    Replot two-sided Van Hove (signed Δx) with linear X and log-scaled Y.
+    Compatible with outputs from linearLog_pooled_log_scaled_van_hove_per_lag().
+
+    Expects rows with:
+      - 'lag_time_frames' (int) and/or 'lag_time_s' (float)
+      - 'bin_center'
+      - 'P(Δx)'  OR 'P(|Δx|)'  (probability density column)
+      - optional 'gaussian_fit'
+    """
+    if not all_data:
+        print("No data to save.")
+        return
+
+
+    df = pd.DataFrame(all_data).copy()
+
+    # Upd: make saver compatible with all Van Hove function v
+    # Older versions used "lag_time", newer ones use "lag_time_s" or "lag_time_frames".
+    if "lag_time" not in df.columns:
+        if "lag_time_s" in df.columns:
+            df["lag_time"] = df["lag_time_s"]
+        elif "lag_time_frames" in df.columns:
+            df["lag_time"] = df["lag_time_frames"]
+        else:
+            raise KeyError(
+                "Expected one of 'lag_time', 'lag_time_s', or 'lag_time_frames' in the data."
+            )
+    # ---
+
+
+    # pick probability column robustly
+    pcol = None
+    for cand in ("P(Δx)", "P(|Δx|)", "P(dx)", "P(|dx|)"):
+        if cand in df.columns:
+            pcol = cand
+            break
+    if pcol is None:
+        raise KeyError("Expected a probability column like 'P(Δx)' or 'P(|Δx|)' not found in all_data.")
+
+    # ensure lag columns
+    if "lag_time_frames" not in df.columns:
+        if "lag_time" in df.columns:  # legacy
+            df["lag_time_frames"] = df["lag_time"].astype(int)
+        else:
+            raise KeyError("No 'lag_time_frames' (or fallback 'lag_time') in all_data.")
+    if "lag_time_s" not in df.columns:
+        df["lag_time_s"] = df["lag_time_frames"] * float(dt)
+
+    # sort for smooth lines & persist the (possibly augmented) table
+    df = df.sort_values(["lag_time_frames", "bin_center"])
+    df.to_csv(csv_filename, index=False)
+
+    # plot
+    plt.figure(figsize=(8, 5))
+    for fr, sub in df.groupby("lag_time_frames"):
+        x = sub["bin_center"].to_numpy()
+        y = sub[pcol].to_numpy()
+
+        # main curve (clip only for display on logY)
+        line, = plt.plot(  #new
+            x,
+            np.clip(y, clip_eps_for_plot, None),
+            label=f"Δt = {sub['lag_time_s'].iloc[0]:.3f}s ({int(fr)} fr)"
+        )  #new
+        color = line.get_color()  #new
+
+        # dashed fit
+        do_refit = refit_sigma or ("gaussian_fit" not in sub.columns)
+        if do_refit:
+            try:
+                H, A, mu, sigma = gauss_fit(x, y)
+                g = gauss(x, H, A, mu, sigma)
+                plt.plot(
+                    x,
+                    np.clip(g, clip_eps_for_plot, None),
+                    "--",                 #new
+                    color=color,         #new same color as main curve
+                    label=f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s, σ={sigma:.2f}"
+                )  #new
+            except Exception:
+                pass
+        else:
+            g = sub["gaussian_fit"].to_numpy()
+            # try to annotate σ (non-fatal if it fails)
+            try:
+                H, A, mu, sigma = gauss_fit(x, y)
+                lbl = f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s, σ={sigma:.2f}"
+            except Exception:
+                lbl = f"Fit Δt = {sub['lag_time_s'].iloc[0]:.3f}s"
+            plt.plot(
+                x,
+                np.clip(g, clip_eps_for_plot, None),
+                "--",             #new
+                color=color,     #new
+                label=lbl
+            )  #new
+
+    plt.yscale("log")  # linear X, log Y
+    plt.xlabel("Scaled Δx (signed)")
+    plt.ylabel("P(Δx)")
+    ax = plt.gca()                #new #If there is currently no Axes on this Figure, a new one is created using Figure.add_subplot
+    ax.set_ylim(1e-5, 10)       #new tighter y-range
+    plt.title("Van Hove (two-sided) with log-scaled Y and Gaussian fits")
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(fig_filename, dpi=300)
+    plt.close()
 
 # overall
 
