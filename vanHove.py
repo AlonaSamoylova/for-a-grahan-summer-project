@@ -1987,6 +1987,12 @@ def robust_rg_hopper_split(tracks, seg_size=10, alpha=0.975):
     # 0.975 → ~7.377; 0.99 → ~9.210; 0.95 → ~5.991
     chi2_cut = {0.95: 5.991, 0.975: 7.377, 0.99: 9.210}.get(alpha, 7.377)
 
+    # we can now call the function with alpha=0.95, alpha=0.975, or alpha=0.99.
+
+    # If someone forgets to pass alpha, it defaults to 7.377 (97.5%), which matches your literature.
+
+    # adding new thresholds later becomes trivial (e.g., 0.999 → 13.82).
+
     hoppers_idx = [keep_idx[i] for i in range(len(keep_idx)) if RD2[i] > chi2_cut]
     nonhop_idx  = [keep_idx[i] for i in range(len(keep_idx)) if RD2[i] <= chi2_cut]
 
@@ -2002,7 +2008,39 @@ def robust_rg_hopper_split(tracks, seg_size=10, alpha=0.975):
         "is_hopper": RD2 > chi2_cut
     })
 
+    # NEW: print how many hoppers you’d get for each standard cutoff
+    print_rg_threshold_summary(diag)
+    
     return hoppers, nonhop, diag
+
+
+# to see how many traj pass each hopping threshold (%)
+def print_rg_threshold_summary(diag):
+    """
+    Print how many trajectories would be called 'hoppers' for several RD^2 cutoffs.
+    Expects a DataFrame `diag` with a column 'RD2'.
+    """
+    chi2_table = {
+        0.95: 5.991,   # χ²₂,0.95
+        0.975: 7.377,  # χ²₂,0.975
+        0.99: 9.210    # χ²₂,0.99
+    }
+
+    if "RD2" not in diag.columns:
+        print("[rg-threshold] diag has no 'RD2' column, skipping summary.")
+        return
+
+    total = len(diag)
+    if total == 0:
+        print("[rg-threshold] diag is empty, skipping summary.")
+        return
+
+    print("[rg-threshold] Mahalanobis RD^2 counts per cutoff:")
+    for alpha, cut in chi2_table.items():
+        n = int((diag["RD2"] > cut).sum())
+        frac = n / total
+        print(f"  alpha={alpha:.3f}, cutoff={cut:.3f}: "
+              f"{n}/{total} trajectories ({frac:.1%} hoppers)")
 
 
 # helper to modify vanHove to take not only 3 integer vals
