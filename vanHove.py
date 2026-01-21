@@ -12,8 +12,27 @@ import random #to pick random traj from non/hoppers
 
 
 global_start = time.time()
+
+"""
+PIPELINE OVERVIEW (Jan 2026)
+
+- msd_sum        : per-trajectory time-averaged MSD
+- msd_mag_1s     : diagnostic (instructor-style), from msd_sum
+- msd_mean       : ensemble mean MSD (used for gamma / plots)
+- t_fit/msd_fit  : used for power-law fitting
+- alpha split    : from bifurcate_by_msd (per-trajectory)
+- hopper label   : Rg-based, chi^2 = 7.38 (final, defensible)
+
+NOTE:
+Hardcoded 1s cutoff below is legacy / plotting-only.
+"""
+# !global storage for track comparison master function, is here - not to lost it. #JAN
+metrics = {}
+
+
 # new helper functions to find better fit:
 #  the helper function for fitting a single power-law model in log-log space using np.polyfit
+
 
 def single_powerlaw_fit(msd):
     """
@@ -664,6 +683,29 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     # calculating average MSD (ignore nans => nanmean)
     msd_mean = np.nanmean(msd_matrix, axis=0)
 
+    # JAN
+    # master metrics
+
+    # =========================
+    # Level 1: initialize per-trajectory metrics container
+    # =========================
+    metrics = {}
+
+    for traj_id, track in enumerate(tracks_filtered):
+        metrics[traj_id] = {"traj_id": traj_id, "length_frames": len(track),}
+
+    # Level 2: MSD magnitude at fixed lag (similar Prof.'s Shi diagnostic)
+    dt = 0.025
+    lag_frames = int(round(1.0 / dt))
+    idx = lag_frames - 1  # if msd[0] = lag 1 frame
+
+    for traj_id, msd in enumerate(msd_sum):
+        if msd is not None and len(msd) > idx:
+            metrics[traj_id]["msd_mag_1s"] = float(msd[idx])
+        else:
+            metrics[traj_id]["msd_mag_1s"] = np.nan
+
+
     # plotting, MSD curve in log-log scale
     plt.figure()
     plt.plot(np.arange(1, len(msd_mean) + 1) * 0.025, msd_mean)
@@ -678,6 +720,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
     msd_df = pd.DataFrame({"time_s": np.arange(1, len(msd_mean) + 1) * 0.025, "mean_msd": msd_mean })
     msd_df.to_csv("Table 1: mean_msd_loglog.csv", index=False)
+
 
     # now, let's calculate ensemble MSD and non-ergodicity
     msd_ensemble_sum = [] #storage
@@ -716,6 +759,7 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     # print("Any NaNs in msd_mean?", np.isnan(msd_mean).any())
     # print("Any NaNs in msd_ensemble_mean?", np.isnan(msd_ensemble_mean).any())
     # print("Number of valid (non-nan) MSD ensemble entries:", np.sum(~np.isnan(msd_ensemble_mean)))
+
 
 
     gamma = (msd_ensemble_mean - msd_mean) / msd_ensemble_mean
@@ -807,6 +851,11 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     # time_valid = t[valid]
     # msd_valid = msd_mean[valid] #now we have valid time to use
 
+    #JAN -keep in mind
+
+    # NOTE (2026-01): time_valid/msd_valid use a hardcoded 1s cutoff (legacy / for plotting only).
+    # Current fitting uses t_fit/msd_fit based on FIT_MAX_S below, so this cutoff should not affect fits.
+    # If later we refactor, keep this separation explicit.
 
     # Basic clean mask
     valid = (msd_mean > 0) & (~np.isnan(msd_mean))
@@ -1463,9 +1512,49 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
 
 
     params_bif = pd.DataFrame(param_rows_traj)
-    fast_trajs, slow_trajs, summary = bifurcate_by_msd(params_bif, tracks_filtered, alpha_fast=0.6)
+    fast_trajs, slow_trajs, summary = bifurcate_by_msd(params_bif, tracks_filtered, alpha_fast=0.6) #! JAN appears to be corresponding to Prof.'s Shi variant
     summary.to_csv("Table_35_MSD_bifurcation_summary.csv", index=False)
     print(f"[bifurcation] DONE: {len(fast_trajs)} fast, {len(slow_trajs)} slow")
+
+
+    # JAN
+    # master metrics
+
+    # # lvl 2
+    # for _, row in summary.iterrows():
+    #     tid = int(row["traj_id"])
+    #     metrics[tid]["alpha_eff"] = float(row.get("alpha_eff", np.nan))
+    #     metrics[tid]["is_alpha_fast"] = int(row["is_fast"])
+
+    # to make sure indexes are correct:
+    # ---- Level 3: attach alpha-bifurcation labels to metrics (bulletproof) ----
+    missing_in_metrics = 0
+    written = 0
+
+    for _, row in summary.iterrows():
+        try:
+            tid = int(row.get("traj_id"))
+        except Exception:
+            continue
+
+        if tid not in metrics:
+            missing_in_metrics += 1
+            continue  # don't crash long run
+
+        metrics[tid]["alpha_eff"] = float(row.get("alpha_eff", np.nan))
+
+        # be robust to column naming
+        if "is_fast" in row:
+            metrics[tid]["is_alpha_fast"] = int(row["is_fast"])
+        elif "is_alpha_fast" in row:
+            metrics[tid]["is_alpha_fast"] = int(row["is_alpha_fast"])
+        else:
+            metrics[tid]["is_alpha_fast"] = np.nan
+
+        written += 1
+
+    print(f"JAN Master Summary: [alpha->metrics] wrote={written}, missing_metrics_keys={missing_in_metrics}, summary_rows={len(summary)}")
+
 
     print("\nProcessing Summary/Debugging:")
     print(f"  Total tracks processed:       {total_tracks}")
@@ -2001,7 +2090,9 @@ def robust_rg_hopper_split(tracks, seg_size=10, alpha=0.975):
 
     # opt. diagnostics to compare with your old rule
     diag = pd.DataFrame({
-        "traj_index": keep_idx,
+        # "traj_index": keep_idx,
+        # JAN: metrix, same index
+        "traj_id": keep_idx,
         "z1_med_logRg": Z[:,0],
         "z2_MAD_logRg": Z[:,1],
         "RD2": RD2,
@@ -2920,8 +3011,43 @@ def pooled_log_scaled_van_hove_per_lag(
     except Exception:
         pass
 
+    #JAN 
+    # master metrics
+    # ---- attach hopper labels to metrics (bulletproof) ----
+    missing = 0
+    written = 0
 
+    # !be robust to naming (traj_id vs traj_index)
+    id_col = "traj_id" if "traj_id" in rg_diag.columns else ("traj_index" if "traj_index" in rg_diag.columns else None)
+    if id_col is None:
+        print("[hopper->metrics] ERROR: rg_diag has no traj_id/traj_index column. Columns:", list(rg_diag.columns))
+    else:
+        for _, row in rg_diag.iterrows():
+            try:
+                tid = int(row[id_col])
+            except Exception:
+                continue
+
+            if tid not in metrics:
+                missing += 1
+                continue
+
+            # main label
+            metrics[tid]["is_hopper"] = int(bool(row.get("is_hopper", False)))
+
+            # optional: keep diagnostics for later plots/debug
+            if "RD2" in rg_diag.columns:
+                metrics[tid]["RD2"] = float(row.get("RD2", np.nan))
+            if "chi2_cut" in rg_diag.columns:
+                metrics[tid]["chi2_cut"] = float(row.get("chi2_cut", np.nan))
+
+            written += 1
+
+        print(f"[hopper->metrics] wrote={written}, missing_metrics_keys={missing}, rg_diag_rows={len(rg_diag)}")
+
+        print("hopper counts in metrics:", sum(v.get("is_hopper", 0) == 1 for v in metrics.values()))
     return all_data, Rg_hoppers, Rg_non_hoppers
+
 
 
 def pooled_log_scaled_van_hove_per_lag_v1(tracks, lags_to_plot=[0.1, 1, 30], bins=100, range_max=10.0, dt=0.025, lag_units="seconds"  ): # 'frames' or 'seconds'):  #already log scale
@@ -4816,5 +4942,39 @@ def plot_from_pack_simple_v2(
 
 pp = pack(seg_size=10, k=2.0, n_plot_each=3, seed=0)   #sampler
 plot_from_pack_simple_v2(pp, max_per_group=3, prefix="traj")
+
+# JAN
+
+# ---------- FINAL: master metrics table ----------
+out_dir = "diagnostics_output"
+os.makedirs(out_dir, exist_ok=True)
+
+master_df = pd.DataFrame(list(metrics.values()))
+
+# (optional but recommended) keep only rows where key labels exist + msd_mag exists
+required_cols = ["msd_mag_1s", "is_hopper", "is_alpha_fast"]
+missing_cols = [c for c in required_cols if c not in master_df.columns]
+if missing_cols:
+    print("[master_df] WARNING: missing columns:", missing_cols)
+else:
+    master_df = master_df[
+        np.isfinite(master_df["msd_mag_1s"]) &
+        (master_df["is_hopper"].isin([0, 1])) &
+        (master_df["is_alpha_fast"].isin([0, 1]))
+    ].copy()
+
+# save full master table
+master_path = os.path.join(out_dir, "master_metrics_table.csv")
+master_df.to_csv(master_path, index=False)
+print(f"[master_df] saved: {master_path}  (rows={len(master_df)})")
+
+# quick sanity counts (super useful at 2am)
+if "is_hopper" in master_df.columns:
+    print("[master_df] hopper count:", int((master_df["is_hopper"] == 1).sum()))
+if "is_alpha_fast" in master_df.columns:
+    print("[master_df] alpha_fast count:", int((master_df["is_alpha_fast"] == 1).sum()))
+if all(c in master_df.columns for c in ["is_hopper", "is_alpha_fast"]):
+    print("[master_df] cross-tab (hopper vs alpha_fast):")
+    print(pd.crosstab(master_df["is_hopper"], master_df["is_alpha_fast"]))
 
 print(f"Total time: {time.time() - global_start:.2f}s")
