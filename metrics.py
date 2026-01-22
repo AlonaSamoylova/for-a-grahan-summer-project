@@ -30,6 +30,9 @@ tracks_filtered = canonical tracks
 # !global storage for track comparison master function, is here - not to lost it. #JAN
 metrics = {}
 
+# Global canonical track storage for table-driven plotting (set inside process_tracks)
+TRACKS_CANONICAL = None
+
 
 # new helper functions to find better fit:
 #  the helper function for fitting a single power-law model in log-log space using np.polyfit
@@ -636,6 +639,10 @@ def CalcMSD(folder_path, min_length=200, time_ratio=2, seg_size=10): #enlarge mi
     filter_start = time.time()
 
     tracks_filtered = [track for track in tracks if len(track) > min_length]
+
+    # expose canonical filtered tracks for later plotting from master_df
+    global TRACKS_CANONICAL
+    TRACKS_CANONICAL = tracks_filtered
 
     print(f"Filtered tracks in {time.time() - filter_start:.2f} seconds. Remaining tracks: {len(tracks_filtered)}")
 
@@ -3026,78 +3033,46 @@ def pooled_log_scaled_van_hove_per_lag(
     # # ---- attach hopper labels to metrics (bulletproof) ----
 
 
-        # ---- attach hopper labels to metrics (bulletproof) ----
+    # ---- attach hopper labels to metrics (bulletproof) ----
     if attach_hoppers and (metrics_dict is not None):
+        # ---- attach hopper labels to metrics (with index→ID mapping) ----
         missing = 0
         written = 0
 
         id_col = "traj_id" if "traj_id" in rg_diag.columns else (
-            "traj_index" if "traj_index" in rg_diag.columns else None
-        )
+                "traj_index" if "traj_index" in rg_diag.columns else None)
 
         if id_col is None:
             print("[hopper->metrics] ERROR: rg_diag has no traj_id/traj_index column. Columns:",
-                  list(rg_diag.columns))
+                list(rg_diag.columns))
         else:
-            # Optional helpers for robust ID reconciliation
-            inv_track_ids = None
-            if track_ids is not None:
-                try:
-                    # map external track_id -> local index
-                    inv_track_ids = {int(v): i for i, v in enumerate(track_ids)}
-                except Exception:
-                    inv_track_ids = None
-
             for _, row in rg_diag.iterrows():
                 try:
-                    tid = int(row[id_col])
+                    tid_raw = row[id_col]
+                    tid = int(tid_raw)
                 except Exception:
                     missing += 1
                     continue
 
-                # Step 1: direct match
-                if tid not in metrics_dict and track_ids is not None:
-                    # Step 2: interpret tid as local index -> metrics key
+                # map index -> metrics key ONLY if id_col is traj_index
+                if (track_ids is not None) and (id_col == "traj_index"):
                     if 0 <= tid < len(track_ids):
-                        cand = track_ids[tid]
-                        if cand in metrics_dict:
-                            tid = cand
-                    # Step 3: interpret tid as external track_id -> local index -> metrics key
-                    if tid not in metrics_dict and inv_track_ids is not None:
-                        if tid in inv_track_ids:
-                            idx = inv_track_ids[tid]
-                            if 0 <= idx < len(track_ids):
-                                cand = track_ids[idx]
-                                if cand in metrics_dict:
-                                    tid = cand
+                        tid = track_ids[tid]
+                    else:
+                        missing += 1
+                        continue
 
-                if tid not in metrics_dict:
+                if tid not in metrics:
                     missing += 1
                     continue
 
-                metrics_dict[tid]["is_hopper"] = int(bool(row.get("is_hopper", False)))
-
-                # optional diagnostics
-                if "RD2" in rg_diag.columns:
-                    try:
-                        metrics_dict[tid]["RD2"] = float(row.get("RD2", np.nan))
-                    except Exception:
-                        pass
-                if "chi2_cut" in rg_diag.columns:
-                    try:
-                        metrics_dict[tid]["chi2_cut"] = float(row.get("chi2_cut", np.nan))
-                    except Exception:
-                        pass
-
+                metrics[tid]["is_hopper"] = int(bool(row.get("is_hopper", False)))
                 written += 1
 
         print(f"[hopper->metrics] wrote={written}, missing_metrics_keys={missing}, rg_diag_rows={len(rg_diag)}")
-        try:
-            print("hopper counts in metrics:",
-                  sum(v.get("is_hopper", 0) == 1 for v in metrics_dict.values()))
-        except Exception:
-            pass
-
+        print("hopper counts in metrics:",
+            sum(v.get("is_hopper", 0) == 1 for v in metrics.values()))
+        
     return all_data, Rg_hoppers, Rg_non_hoppers
 
 
@@ -5037,6 +5012,218 @@ def plot_from_pack_simple_v2(
 
 
 
+# =========================
+# Table-driven trajectory example plots (Jan 2026)
+# =========================
+def plot_examples_from_master_table(
+    master_df=None,
+    master_csv_path=None,
+    use_raw_csv=False,
+    tracks_pack=None,
+    raw_trackmate_csv_path=None,
+    outdir="diagnostics_output/cage_examples_from_table",
+    n_per_group=3,
+    seed=0,
+    seg_size=10,
+    line_alpha=0.5,
+    line_lw=0.8,
+    boundary_every=1,
+    start_N=1,
+    prefer_top=True,
+):
+    """
+    Build representative trajectory XY plots directly from the unified master metrics table.
+
+    Two modes:
+      A) In-memory (recommended for speed):
+         - pass master_df (pd.DataFrame) and tracks_pack ({traj_id: traj_array}), set use_raw_csv=False
+      B) Reconstruct from raw TrackMate CSV:
+         - pass master_csv_path, raw_trackmate_csv_path, set use_raw_csv=True
+
+    master_df / master CSV must contain: traj_id, is_hopper, is_alpha_fast (ideally also RD2, length_frames)
+    tracks_pack trajectories must be Nx2 or Nx3 arrays with columns [x,y,(t)].
+    """
+
+    os.makedirs(outdir, exist_ok=True)
+
+    # --- load master table ---
+    if master_df is None:
+        if master_csv_path is None:
+            print("[plot_examples_from_master_table] ERROR: provide master_df or master_csv_path.")
+            return {}
+        master_df = pd.read_csv(master_csv_path)
+
+    # --- build trajectory getter ---
+    if use_raw_csv:
+        if raw_trackmate_csv_path is None:
+            print("[plot_examples_from_master_table] ERROR: raw_trackmate_csv_path is required when use_raw_csv=True.")
+            return {}
+        raw_df = pd.read_csv(raw_trackmate_csv_path)
+
+        req_raw = ["TRACK_ID", "POSITION_X", "POSITION_Y"]
+        missing_raw = [c for c in req_raw if c not in raw_df.columns]
+        if missing_raw:
+            print("[plot_examples_from_master_table] ERROR: raw TrackMate CSV missing columns:", missing_raw)
+            print("  raw columns:", list(raw_df.columns))
+            return {}
+
+        time_col = "FRAME" if "FRAME" in raw_df.columns else ("POSITION_T" if "POSITION_T" in raw_df.columns else None)
+
+        def _traj_from_id(track_id: int):
+            d = raw_df[raw_df["TRACK_ID"] == track_id]
+            if d.empty:
+                return None
+            if time_col is not None:
+                d = d.sort_values(time_col)
+                t = d[time_col].to_numpy()
+            else:
+                t = np.arange(len(d), dtype=float)
+            xy = d[["POSITION_X", "POSITION_Y"]].to_numpy()
+            return np.column_stack([xy, t])
+
+    else:
+        if tracks_pack is None:
+            print("[plot_examples_from_master_table] ERROR: tracks_pack is required when use_raw_csv=False.")
+            return {}
+
+        def _traj_from_id(track_id: int):
+            traj = tracks_pack.get(int(track_id))
+            if traj is None:
+                return None
+            traj = np.asarray(traj)
+            if traj.ndim != 2 or traj.shape[1] < 2:
+                return None
+            # ensure Nx3 (x,y,t) for uniform plotting
+            if traj.shape[1] == 2:
+                t = np.arange(traj.shape[0], dtype=float)
+                traj = np.column_stack([traj[:, :2], t])
+            else:
+                traj = traj[:, :3]
+            return traj
+
+    # --- sanity: required columns ---
+    req_master = ["traj_id", "is_hopper", "is_alpha_fast"]
+    missing_master = [c for c in req_master if c not in master_df.columns]
+    if missing_master:
+        print("[plot_examples_from_master_table] ERROR: master table missing columns:", missing_master)
+        print("  master columns:", list(master_df.columns))
+        return {}
+
+    rng = np.random.default_rng(seed)
+
+    def _pick_ids(df_sub, n):
+        if df_sub.empty:
+            return []
+        # Prefer "top" examples for interpretability:
+        #   - hopper groups: highest RD2 if available, else longest
+        #   - nonhopper groups: longest
+        if prefer_top:
+            try:
+                if "RD2" in df_sub.columns and (df_sub["RD2"].notna().any()) and int(df_sub["is_hopper"].iloc[0]) == 1:
+                    sort_cols = ["RD2"] + (["length_frames"] if "length_frames" in df_sub.columns else [])
+                    df_sub = df_sub.sort_values(sort_cols, ascending=False)
+                    return df_sub["traj_id"].astype(int).head(n).tolist()
+                if "length_frames" in df_sub.columns and (df_sub["length_frames"].notna().any()):
+                    df_sub = df_sub.sort_values("length_frames", ascending=False)
+                    return df_sub["traj_id"].astype(int).head(n).tolist()
+            except Exception:
+                pass
+
+        ids = df_sub["traj_id"].astype(int).to_numpy()
+        n = min(n, len(ids))
+        return rng.choice(ids, size=n, replace=False).tolist()
+
+    def _save_two_variants(traj_arr, group_label, cls_label, tag, N):
+        xy = traj_arr[:, :2]
+        rel = np.linspace(0, 1, len(xy))
+
+        # Variant A
+        plt.figure(figsize=(5, 5))
+        sc = plt.scatter(xy[:, 0], xy[:, 1], c=rel, s=6, cmap="viridis")
+        plt.plot([xy[0, 0]], [xy[0, 1]], "o", ms=6, label="start")
+        plt.plot([xy[-1, 0]], [xy[-1, 1]], "s", ms=6, label="end")
+        plt.gca().set_aspect("equal", adjustable="datalim")
+        plt.xlabel("x"); plt.ylabel("y")
+        plt.title(f"{group_label} / {cls_label}")
+        cb = plt.colorbar(sc, fraction=0.046, pad=0.02); cb.set_label("relative time")
+        plt.legend(fontsize=8); plt.tight_layout()
+        fnameA = os.path.join(outdir, f"Figure {N}_CageExamples_table_{group_label}_{cls_label}_{tag}_scatter.png")
+        plt.savefig(fnameA, dpi=300, bbox_inches="tight")
+        plt.close()
+        N += 1
+
+        # Variant B
+        plt.figure(figsize=(5, 5))
+        sc = plt.scatter(xy[:, 0], xy[:, 1], c=rel, s=6, cmap="viridis")
+        plt.plot(xy[:, 0], xy[:, 1], "-", lw=line_lw, alpha=line_alpha)
+        plt.plot([xy[0, 0]], [xy[0, 1]], "o", ms=6, label="start")
+        plt.plot([xy[-1, 0]], [xy[-1, 1]], "s", ms=6, label="end")
+
+        if seg_size and seg_size > 0 and len(xy) > seg_size:
+            bounds = np.arange(seg_size, len(xy), seg_size)
+            plt.scatter(xy[bounds, 0], xy[bounds, 1], s=24,
+                        facecolors="none", edgecolors="k", linewidths=0.8,
+                        label="segment boundary")
+            if boundary_every >= 1:
+                for k, idx_b in enumerate(bounds):
+                    if (k % boundary_every) != 0:
+                        continue
+                    plt.annotate(str(k + 1), (xy[idx_b, 0], xy[idx_b, 1]),
+                                 textcoords="offset points", xytext=(2, 2),
+                                 fontsize=7, alpha=0.7)
+
+        plt.gca().set_aspect("equal", adjustable="datalim")
+        plt.xlabel("x"); plt.ylabel("y")
+        plt.title(f"{group_label} / {cls_label} (line + segment boundaries)")
+        cb = plt.colorbar(sc, fraction=0.046, pad=0.02); cb.set_label("relative time")
+        plt.legend(fontsize=8); plt.tight_layout()
+        fnameB = os.path.join(outdir, f"Figure {N}_CageExamples_table_{group_label}_{cls_label}_{tag}_scatter_line_segments.png")
+        plt.savefig(fnameB, dpi=300, bbox_inches="tight")
+        plt.close()
+        N += 1
+
+        return N
+
+    group_defs = [
+        ("all",  "hopper",     "is_hopper == 1"),
+        ("all",  "nonhopper",  "is_hopper == 0"),
+        ("fast", "hopper",     "is_alpha_fast == 1 and is_hopper == 1"),
+        ("fast", "nonhopper",  "is_alpha_fast == 1 and is_hopper == 0"),
+        ("slow", "hopper",     "is_alpha_fast == 0 and is_hopper == 1"),
+        ("slow", "nonhopper",  "is_alpha_fast == 0 and is_hopper == 0"),
+    ]
+
+    chosen = {}
+    N = start_N
+
+    for group_label, cls_label, query_str in group_defs:
+        try:
+            sub = master_df.query(query_str).copy()
+        except Exception:
+            # fallback without pandas query if odd dtypes
+            if "and" in query_str:
+                # crude fallback, best effort
+                sub = master_df.copy()
+            else:
+                sub = master_df.copy()
+        ids = _pick_ids(sub, n_per_group)
+        chosen[f"{group_label}_{cls_label}"] = ids
+        if not ids:
+            print(f"[plot_examples_from_master_table] [skip] {group_label}/{cls_label}: no ids")
+            continue
+        print(f"[plot_examples_from_master_table] [plot] {group_label}/{cls_label}: ids={ids}")
+
+        for track_id in ids:
+            traj = _traj_from_id(int(track_id))
+            if traj is None:
+                print(f"[plot_examples_from_master_table] WARNING: traj_id={track_id} not found / invalid")
+                continue
+            tag = f"tid{int(track_id)}"
+            N = _save_two_variants(traj, group_label, cls_label, tag, N)
+
+    print(f"[plot_examples_from_master_table] saved to: {outdir}")
+    return chosen
+
 pp = pack(seg_size=10, k=2.0, n_plot_each=3, seed=0)   #sampler
 plot_from_pack_simple_v2(pp, max_per_group=3, prefix="traj")
 
@@ -5083,432 +5270,28 @@ if all(c in master_df.columns for c in ["is_hopper", "is_alpha_fast"]):
     print(pd.crosstab(master_df["is_hopper"], master_df["is_alpha_fast"]))
 
 
-# =========================
-# Table-driven trajectory example plots (Jan 2026) — dual input (DF or CSV) + optional raw CSV
-# =========================
-def plot_examples_from_master_table(
-    master_df=None,                                # NEW: allow passing DF directly
-    master_csv_path="diagnostics_output/master_metrics_table.csv",
-    raw_trackmate_csv_path=None,
-    use_raw_csv=False,                             # NEW: default False -> don't require raw CSV path
-    tracks_pack=None,                              # NEW: dict-like {traj_id: traj_arr} for temporary mode
-    outdir="diagnostics_output/cage_examples_from_table",
-    n_per_group=3,
-    seed=0,
-    seg_size=10,
-    line_alpha=0.5,
-    line_lw=0.8,
-    boundary_every=1,
-    start_N=1,
-    prefer_top=True,
-):
-    """
-    Build representative trajectory XY plots using the unified master metrics table.
+# ---------- OPTIONAL: example trajectory plots directly from master_df ----------
+# Toggle this on/off quickly without touching paths.
+MAKE_TABLE_EXAMPLE_PLOTS = True
 
-    Two modes:
-
-    (A) Temporary / in-memory mode (recommended while iterating):
-        - pass master_df=<DataFrame>
-        - use_raw_csv=False (default)
-        - provide tracks_pack={traj_id: traj_arr} where traj_arr is Nx2 or Nx3 (x,y,t)
-        This avoids file paths and avoids reading raw TrackMate CSV.
-
-    (B) Reproducible reconstruction mode:
-        - use_raw_csv=True
-        - provide raw_trackmate_csv_path pointing to TrackMate CSV
-        - master_df can be passed OR read from master_csv_path
-        Reconstructs trajectories by TRACK_ID == traj_id.
-
-    Saves two files per trajectory:
-      A) scatter (colored by relative time)
-      B) scatter + thin path line + segment boundaries
-
-    Returns:
-      dict with chosen IDs per group (for logging / reproducibility)
-    """
-    import os
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
-
-    os.makedirs(outdir, exist_ok=True)
-
-    # --- load master table (DF or CSV) ---
-    if master_df is None:
-        master_df = pd.read_csv(master_csv_path)
-
-    # --- sanity: required master columns ---
-    req_master = ["traj_id", "is_hopper", "is_alpha_fast"]
-    missing_master = [c for c in req_master if c not in master_df.columns]
-    if missing_master:
-        print("[plot_examples_from_master_table] ERROR: master table missing columns:", missing_master)
-        print("  master columns:", list(master_df.columns))
-        return {}
-
-    # --- choose trajectory source ---
-    raw_df = None
-    time_col = None
-
-    if use_raw_csv:
-        # require raw csv path
-        if raw_trackmate_csv_path is None:
-            print("[plot_examples_from_master_table] ERROR: use_raw_csv=True requires raw_trackmate_csv_path.")
-            return {}
-        raw_df = pd.read_csv(raw_trackmate_csv_path)
-
-        req_raw = ["TRACK_ID", "POSITION_X", "POSITION_Y"]
-        missing_raw = [c for c in req_raw if c not in raw_df.columns]
-        if missing_raw:
-            print("[plot_examples_from_master_table] ERROR: raw TrackMate CSV missing columns:", missing_raw)
-            print("  raw columns:", list(raw_df.columns))
-            return {}
-
-        time_col = "FRAME" if "FRAME" in raw_df.columns else ("POSITION_T" if "POSITION_T" in raw_df.columns else None)
-    else:
-        # temporary mode: require in-memory container
-        if tracks_pack is None:
-            print("[plot_examples_from_master_table] ERROR: use_raw_csv=False requires tracks_pack={traj_id: traj_arr}.")
-            return {}
-
-    # --- helper: reconstruct/get one trajectory as (x,y,t) numpy array ---
-    def _traj_from_track_id(track_id: int):
-        if use_raw_csv:
-            d = raw_df[raw_df["TRACK_ID"] == track_id]
-            if d.empty:
-                return None
-            if time_col is not None:
-                d = d.sort_values(time_col)
-                t = d[time_col].to_numpy()
-            else:
-                t = np.arange(len(d), dtype=float)
-            xy = d[["POSITION_X", "POSITION_Y"]].to_numpy()
-            return np.column_stack([xy, t])
-
-        # temporary mode: pull from dict-like container
-        traj = tracks_pack.get(int(track_id), None)
-        if traj is None:
-            return None
-
-        # normalize to Nx3 for plotting code (ensure t exists)
-        traj = np.asarray(traj)
-        if traj.ndim != 2 or traj.shape[0] < 2:
-            return None
-        if traj.shape[1] >= 3:
-            return traj[:, :3]
-        # Nx2 -> add synthetic time
-        t = np.arange(traj.shape[0], dtype=float)
-        return np.column_stack([traj[:, :2], t])
-
-    # --- helper: pick IDs for a group ---
-    rng = np.random.default_rng(seed)
-
-    def _pick_ids(df_sub, n):
-        if df_sub.empty:
-            return []
-        # Prefer "top" examples for interpretability:
-        #   - hopper groups: highest RD2 if available, else longest
-        #   - nonhopper groups: longest
-        if prefer_top:
-            if "RD2" in df_sub.columns and (df_sub["RD2"].notna().any()) and (df_sub["is_hopper"].iloc[0] == 1):
-                sort_cols = ["RD2"]
-                if "length_frames" in df_sub.columns:
-                    sort_cols.append("length_frames")
-                df_sub = df_sub.sort_values(sort_cols, ascending=False)
-                return df_sub["traj_id"].astype(int).head(n).tolist()
-            if "length_frames" in df_sub.columns and (df_sub["length_frames"].notna().any()):
-                df_sub = df_sub.sort_values("length_frames", ascending=False)
-                return df_sub["traj_id"].astype(int).head(n).tolist()
-
-        # fallback: random sample
-        ids = df_sub["traj_id"].astype(int).to_numpy()
-        n = min(n, len(ids))
-        return rng.choice(ids, size=n, replace=False).tolist()
-
-    # --- plotting core (same as your clone) ---
-    def _save_two_variants(traj_arr, group_label, cls_label, tag, N):
-        xy = traj_arr[:, :2]
-        rel = np.linspace(0, 1, len(xy))
-
-        # Variant A
-        plt.figure(figsize=(5, 5))
-        sc = plt.scatter(xy[:, 0], xy[:, 1], c=rel, s=6, cmap="viridis")
-        plt.plot([xy[0, 0]], [xy[0, 1]], "o", ms=6, label="start")
-        plt.plot([xy[-1, 0]], [xy[-1, 1]], "s", ms=6, label="end")
-        plt.gca().set_aspect("equal", adjustable="datalim")
-        plt.xlabel("x"); plt.ylabel("y")
-        plt.title(f"{group_label} / {cls_label}")
-        cb = plt.colorbar(sc, fraction=0.046, pad=0.02); cb.set_label("relative time")
-        plt.legend(fontsize=8); plt.tight_layout()
-        fnameA = os.path.join(outdir, f"Figure {N}_CageHoppersExamples_table_{group_label}_{cls_label}_{tag}_scatter.png")
-        plt.savefig(fnameA, dpi=300, bbox_inches="tight")
-        plt.close()
-        N += 1
-
-        # Variant B
-        plt.figure(figsize=(5, 5))
-        sc = plt.scatter(xy[:, 0], xy[:, 1], c=rel, s=6, cmap="viridis")
-        plt.plot(xy[:, 0], xy[:, 1], "-", lw=line_lw, alpha=line_alpha)
-        plt.plot([xy[0, 0]], [xy[0, 1]], "o", ms=6, label="start")
-        plt.plot([xy[-1, 0]], [xy[-1, 1]], "s", ms=6, label="end")
-
-        if seg_size and seg_size > 0 and len(xy) > seg_size:
-            bounds = np.arange(seg_size, len(xy), seg_size)
-            plt.scatter(xy[bounds, 0], xy[bounds, 1], s=24,
-                        facecolors="none", edgecolors="k", linewidths=0.8,
-                        label="segment boundary")
-            if boundary_every >= 1:
-                for k, idx_b in enumerate(bounds):
-                    if (k % boundary_every) != 0:
-                        continue
-                    plt.annotate(str(k + 1), (xy[idx_b, 0], xy[idx_b, 1]),
-                                 textcoords="offset points", xytext=(2, 2),
-                                 fontsize=7, alpha=0.7)
-
-        plt.gca().set_aspect("equal", adjustable="datalim")
-        plt.xlabel("x"); plt.ylabel("y")
-        plt.title(f"{group_label} / {cls_label} (line + segment boundaries)")
-        cb = plt.colorbar(sc, fraction=0.046, pad=0.02); cb.set_label("relative time")
-        plt.legend(fontsize=8); plt.tight_layout()
-        fnameB = os.path.join(outdir, f"Figure {N}_CageHoppersExamples_table_{group_label}_{cls_label}_{tag}_scatter_line_segments.png")
-        plt.savefig(fnameB, dpi=300, bbox_inches="tight")
-        plt.close()
-        N += 1
-
-        return N
-
-    # --- define groups based on master table ---
-    group_defs = [
-        ("all",  "hopper",     "is_hopper == 1"),
-        ("all",  "nonhopper",  "is_hopper == 0"),
-        ("fast", "hopper",     "is_alpha_fast == 1 and is_hopper == 1"),
-        ("fast", "nonhopper",  "is_alpha_fast == 1 and is_hopper == 0"),
-        ("slow", "hopper",     "is_alpha_fast == 0 and is_hopper == 1"),
-        ("slow", "nonhopper",  "is_alpha_fast == 0 and is_hopper == 0"),
-    ]
-
-    chosen = {}
-    N = start_N
-
-    for group_label, cls_label, query_str in group_defs:
-        sub = master_df.query(query_str).copy()
-        ids = _pick_ids(sub, n_per_group)
-        chosen[f"{group_label}_{cls_label}"] = ids
-        if not ids:
-            print(f"[plot_examples_from_master_table] [skip] {group_label}/{cls_label}: no ids")
-            continue
-        print(f"[plot_examples_from_master_table] [plot] {group_label}/{cls_label}: ids={ids}")
-
-        for track_id in ids:
-            traj = _traj_from_track_id(int(track_id))
-            if traj is None:
-                print(f"[plot_examples_from_master_table] WARNING: traj_id/TRACK_ID={track_id} not found in source")
-                continue
-            tag = f"tid{int(track_id)}"
-            N = _save_two_variants(traj, group_label, cls_label, tag, N)
-
-    print(f"[plot_examples_from_master_table] saved to: {outdir}")
-    return chosen
-
-
-tracks_pack = {i: traj for i, traj in enumerate(tracks_filtered)}
-
+if MAKE_TABLE_EXAMPLE_PLOTS:
+    try:
+        if TRACKS_CANONICAL is None:
+            print("[plots] WARNING: TRACKS_CANONICAL is None (did process_tracks run?). Skipping table-driven plots.")
+        else:
+            tracks_pack = {i: traj for i, traj in enumerate(TRACKS_CANONICAL)}
+            chosen_ids = plot_examples_from_master_table(
+                master_df=master_df,
+                use_raw_csv=False,
+                tracks_pack=tracks_pack,
+                outdir=os.path.join(out_dir, "cage_examples_from_table"),
+                n_per_group=3,
+                seed=0,
+                seg_size=10,
+                start_N=1,
+            )
+            print("[plots] chosen example IDs:", chosen_ids)
+    except Exception as e:
+        print("[plots] ERROR while making table-driven plots:", repr(e))
 
 print(f"Total time: {time.time() - global_start:.2f}s")
-
-
-
-
-
-# version with tables
-
-# # =========================
-# # Table-driven trajectory example plots (Jan 2026)
-# # =========================
-# def plot_examples_from_master_table(
-#     master_csv_path="diagnostics_output/master_metrics_table.csv",
-#     raw_trackmate_csv_path=None,
-#     outdir="diagnostics_output/cage_examples_from_table",
-#     n_per_group=3,
-#     seed=0,
-#     seg_size=10,
-#     line_alpha=0.5,
-#     line_lw=0.8,
-#     boundary_every=1,
-#     start_N=1,
-#     prefer_top=True,
-# ):
-#     """
-#     Build representative trajectory XY plots directly from the unified master metrics table.
-
-#     This is designed for the "advantage of one table": we select track IDs by conditions
-#     (fast/slow × hopper/nonhopper) from master_metrics_table.csv, then reconstruct the
-#     corresponding trajectories from a raw TrackMate CSV (via TRACK_ID) and save:
-
-#       A) scatter (colored by relative time)
-#       B) scatter + thin path line + segment boundaries
-
-#     Requirements:
-#       - master CSV must contain: traj_id, is_hopper, is_alpha_fast (and ideally RD2, length_frames)
-#       - raw TrackMate CSV must contain: TRACK_ID, POSITION_X, POSITION_Y, and either FRAME or POSITION_T
-
-#     Notes:
-#       - This function does NOT depend on in-memory `tracks_filtered` mapping.
-#       - If `raw_trackmate_csv_path` is None, the function will print an error and return.
-
-#     Returns:
-#       dict with chosen IDs per group (for logging / reproducibility)
-#     """
-#     import os
-#     import numpy as np
-#     import pandas as pd
-#     import matplotlib.pyplot as plt
-
-#     if raw_trackmate_csv_path is None:
-#         print("[plot_examples_from_master_table] ERROR: raw_trackmate_csv_path is required.")
-#         return {}
-
-#     os.makedirs(outdir, exist_ok=True)
-
-#     # --- load tables ---
-#     master_df = pd.read_csv(master_csv_path)
-#     raw_df = pd.read_csv(raw_trackmate_csv_path)
-
-#     # --- sanity: required columns ---
-#     req_master = ["traj_id", "is_hopper", "is_alpha_fast"]
-#     missing_master = [c for c in req_master if c not in master_df.columns]
-#     if missing_master:
-#         print("[plot_examples_from_master_table] ERROR: master table missing columns:", missing_master)
-#         print("  master columns:", list(master_df.columns))
-#         return {}
-
-#     req_raw = ["TRACK_ID", "POSITION_X", "POSITION_Y"]
-#     missing_raw = [c for c in req_raw if c not in raw_df.columns]
-#     if missing_raw:
-#         print("[plot_examples_from_master_table] ERROR: raw TrackMate CSV missing columns:", missing_raw)
-#         print("  raw columns:", list(raw_df.columns))
-#         return {}
-
-#     time_col = "FRAME" if "FRAME" in raw_df.columns else ("POSITION_T" if "POSITION_T" in raw_df.columns else None)
-
-#     # --- helper: reconstruct one trajectory as (x,y,t) numpy array ---
-#     def _traj_from_track_id(track_id: int):
-#         d = raw_df[raw_df["TRACK_ID"] == track_id]
-#         if d.empty:
-#             return None
-#         if time_col is not None:
-#             d = d.sort_values(time_col)
-#             t = d[time_col].to_numpy()
-#         else:
-#             # fallback: preserve row order and use 0..N-1
-#             t = np.arange(len(d), dtype=float)
-#         xy = d[["POSITION_X", "POSITION_Y"]].to_numpy()
-#         # stack into Nx3 for compatibility with plot_from_pack_simple_v2 style
-#         return np.column_stack([xy, t])
-
-#     # --- helper: pick IDs for a group ---
-#     rng = np.random.default_rng(seed)
-
-#     def _pick_ids(df_sub, n):
-#         if df_sub.empty:
-#             return []
-#         # Prefer "top" examples for interpretability:
-#         #   - hopper groups: highest RD2 if available, else longest
-#         #   - nonhopper groups: longest
-#         if prefer_top:
-#             if "RD2" in df_sub.columns and (df_sub["RD2"].notna().any()) and (df_sub["is_hopper"].iloc[0] == 1):
-#                 df_sub = df_sub.sort_values(["RD2", "length_frames"] if "length_frames" in df_sub.columns else ["RD2"],
-#                                             ascending=False)
-#                 return df_sub["traj_id"].astype(int).head(n).tolist()
-#             if "length_frames" in df_sub.columns and (df_sub["length_frames"].notna().any()):
-#                 df_sub = df_sub.sort_values("length_frames", ascending=False)
-#                 return df_sub["traj_id"].astype(int).head(n).tolist()
-
-#         # fallback: random sample
-#         ids = df_sub["traj_id"].astype(int).to_numpy()
-#         n = min(n, len(ids))
-#         return rng.choice(ids, size=n, replace=False).tolist()
-
-#     # --- plotting core (clone of plot_from_pack_simple_v2 inner logic) ---
-#     def _save_two_variants(traj_arr, group_label, cls_label, tag, N):
-#         xy = traj_arr[:, :2]
-#         rel = np.linspace(0, 1, len(xy))
-
-#         # Variant A
-#         plt.figure(figsize=(5, 5))
-#         sc = plt.scatter(xy[:, 0], xy[:, 1], c=rel, s=6, cmap="viridis")
-#         plt.plot([xy[0, 0]], [xy[0, 1]], "o", ms=6, label="start")
-#         plt.plot([xy[-1, 0]], [xy[-1, 1]], "s", ms=6, label="end")
-#         plt.gca().set_aspect("equal", adjustable="datalim")
-#         plt.xlabel("x"); plt.ylabel("y")
-#         plt.title(f"{group_label} / {cls_label}")
-#         cb = plt.colorbar(sc, fraction=0.046, pad=0.02); cb.set_label("relative time")
-#         plt.legend(fontsize=8); plt.tight_layout()
-#         fnameA = os.path.join(outdir, f"Figure {N}_CageHoppersExamples_table_{group_label}_{cls_label}_{tag}_scatter.png")
-#         plt.savefig(fnameA, dpi=300, bbox_inches="tight")
-#         plt.close()
-#         N += 1
-
-#         # Variant B
-#         plt.figure(figsize=(5, 5))
-#         sc = plt.scatter(xy[:, 0], xy[:, 1], c=rel, s=6, cmap="viridis")
-#         plt.plot(xy[:, 0], xy[:, 1], "-", lw=line_lw, alpha=line_alpha)
-#         plt.plot([xy[0, 0]], [xy[0, 1]], "o", ms=6, label="start")
-#         plt.plot([xy[-1, 0]], [xy[-1, 1]], "s", ms=6, label="end")
-
-#         if seg_size and seg_size > 0 and len(xy) > seg_size:
-#             bounds = np.arange(seg_size, len(xy), seg_size)
-#             plt.scatter(xy[bounds, 0], xy[bounds, 1], s=24,
-#                         facecolors="none", edgecolors="k", linewidths=0.8,
-#                         label="segment boundary")
-#             if boundary_every >= 1:
-#                 for k, idx_b in enumerate(bounds):
-#                     if (k % boundary_every) != 0:
-#                         continue
-#                     plt.annotate(str(k + 1), (xy[idx_b, 0], xy[idx_b, 1]),
-#                                  textcoords="offset points", xytext=(2, 2),
-#                                  fontsize=7, alpha=0.7)
-
-#         plt.gca().set_aspect("equal", adjustable="datalim")
-#         plt.xlabel("x"); plt.ylabel("y")
-#         plt.title(f"{group_label} / {cls_label} (line + segment boundaries)")
-#         cb = plt.colorbar(sc, fraction=0.046, pad=0.02); cb.set_label("relative time")
-#         plt.legend(fontsize=8); plt.tight_layout()
-#         fnameB = os.path.join(outdir, f"Figure {N}_CageHoppersExamples_table_{group_label}_{cls_label}_{tag}_scatter_line_segments.png")
-#         plt.savefig(fnameB, dpi=300, bbox_inches="tight")
-#         plt.close()
-#         N += 1
-
-#         return N
-
-#     # --- define groups based on master table ---
-#     group_defs = [
-#         ("all", "hopper",       "is_hopper == 1"),
-#         ("all", "nonhopper",    "is_hopper == 0"),
-#         ("fast", "hopper",      "is_alpha_fast == 1 and is_hopper == 1"),
-#         ("fast", "nonhopper",   "is_alpha_fast == 1 and is_hopper == 0"),
-#         ("slow", "hopper",      "is_alpha_fast == 0 and is_hopper == 1"),
-#         ("slow", "nonhopper",   "is_alpha_fast == 0 and is_hopper == 0"),
-#     ]
-
-#     chosen = {}
-#     N = start_N
-
-#     for group_label, cls_label, query_str in group_defs:
-#         sub = master_df.query(query_str).copy()
-#         ids = _pick_ids(sub, n_per_group)
-#         chosen[f"{group_label}_{cls_label}"] = ids
-#         if not ids:
-#             print(f"[plot_examples_from_master_table] [skip] {group_label}/{cls_label}: no ids")
-#             continue
-#         print(f"[plot_examples_from_master_table] [plot] {group_label}/{cls_label}: ids={ids}")
-
-#         for track_id in ids:
-#             traj = _traj_from_track_id(int(track_id))
-#             if traj is None:
-#                 print(f"[plot_examples_from_master_table] WARNING: TRACK_ID={track_id} not found in raw CSV")
-#                 continue
-#             tag = f"tid{int(track_id)}"
-#             N = _save_two_variants(traj, group_label, cls_label, tag, N)
-
-#     print(f"[plot_examples_from_master_table] saved to: {outdir}")
-#     return chosen
