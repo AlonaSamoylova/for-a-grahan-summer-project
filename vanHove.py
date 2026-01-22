@@ -3023,84 +3023,44 @@ def pooled_log_scaled_van_hove_per_lag(
     #JAN 
     # master metrics
     # # ---- attach hopper labels to metrics (bulletproof) ----
-    # missing = 0
-    # written = 0
-
-    # # !be robust to naming (traj_id vs traj_index)
-    # id_col = "traj_id" if "traj_id" in rg_diag.columns else ("traj_index" if "traj_index" in rg_diag.columns else None)
-    # if id_col is None:
-    #     print("[hopper->metrics] ERROR: rg_diag has no traj_id/traj_index column. Columns:", list(rg_diag.columns))
-    # else:
-    #     for _, row in rg_diag.iterrows():
-    #         try:
-    #             tid = int(row[id_col])
-                
-    #         except Exception:
-    #             continue
-
-    #         if tid not in metrics:
-    #             missing += 1
-    #             continue
-
-    #         # main label
-    #         metrics[tid]["is_hopper"] = int(bool(row.get("is_hopper", False)))
-
-    #         # optional: keep diagnostics for later plots/debug
-    #         if "RD2" in rg_diag.columns:
-    #             metrics[tid]["RD2"] = float(row.get("RD2", np.nan))
-    #         if "chi2_cut" in rg_diag.columns:
-    #             metrics[tid]["chi2_cut"] = float(row.get("chi2_cut", np.nan))
-
-    #         written += 1
-
-    #     print(f"[hopper->metrics] wrote={written}, missing_metrics_keys={missing}, rg_diag_rows={len(rg_diag)}")
-
-    #     print("hopper counts in metrics:", sum(v.get("is_hopper", 0) == 1 for v in metrics.values()))
-    # return all_data, Rg_hoppers, Rg_non_hoppers
 
 
     # ---- attach hopper labels to metrics (bulletproof) ----
     if attach_hoppers and (metrics_dict is not None):
+        # ---- attach hopper labels to metrics (with index→ID mapping) ----
         missing = 0
         written = 0
 
-        # robust to naming (traj_id vs traj_index)
-        id_col = "traj_id" if "traj_id" in rg_diag.columns else ("traj_index" if "traj_index" in rg_diag.columns else None)
+        id_col = "traj_id" if "traj_id" in rg_diag.columns else (
+                "traj_index" if "traj_index" in rg_diag.columns else None)
+
         if id_col is None:
-            print("[hopper->metrics] ERROR: rg_diag has no traj_id/traj_index column. Columns:", list(rg_diag.columns))
+            print("[hopper->metrics] ERROR: rg_diag has no traj_id/traj_index column. Columns:",
+                list(rg_diag.columns))
         else:
             for _, row in rg_diag.iterrows():
                 try:
-                    tid = int(row[id_col])  # tid is local index in the list passed to robust_rg_hopper_split
+                    tid = int(row[id_col])
                 except Exception:
                     continue
 
-                # VARIANT A: map local index -> metrics key if track_ids provided
+                # 🔑 ВАЖЛИВО: мапінг індекс → реальний track_id
                 if track_ids is not None:
                     if 0 <= tid < len(track_ids):
-                        tid = int(track_ids[tid])
-                    else:
-                        missing += 1
-                        continue
+                        tid = track_ids[tid]
 
-                if tid not in metrics_dict:
+                if tid not in metrics:
                     missing += 1
                     continue
 
-                metrics_dict[tid]["is_hopper"] = int(bool(row.get("is_hopper", False)))
-
-                # optional diagnostics
-                if "RD2" in rg_diag.columns:
-                    metrics_dict[tid]["RD2"] = float(row.get("RD2", np.nan))
-                if "chi2_cut" in rg_diag.columns:
-                    metrics_dict[tid]["chi2_cut"] = float(row.get("chi2_cut", np.nan))
-
+                metrics[tid]["is_hopper"] = int(bool(row.get("is_hopper", False)))
                 written += 1
 
         print(f"[hopper->metrics] wrote={written}, missing_metrics_keys={missing}, rg_diag_rows={len(rg_diag)}")
-        print("hopper counts in metrics:", sum(v.get("is_hopper", 0) == 1 for v in metrics_dict.values()))
-    else:
-        print("[hopper->metrics] skipped (attach_hoppers=False or metrics_dict=None)")
+        print("hopper counts in metrics:",
+            sum(v.get("is_hopper", 0) == 1 for v in metrics.values()))
+        
+    return all_data, Rg_hoppers, Rg_non_hoppers
 
 
 
