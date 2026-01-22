@@ -3026,46 +3026,78 @@ def pooled_log_scaled_van_hove_per_lag(
     # # ---- attach hopper labels to metrics (bulletproof) ----
 
 
-    # ---- attach hopper labels to metrics (bulletproof) ----
+        # ---- attach hopper labels to metrics (bulletproof) ----
     if attach_hoppers and (metrics_dict is not None):
-        # ---- attach hopper labels to metrics (with index→ID mapping) ----
         missing = 0
         written = 0
 
         id_col = "traj_id" if "traj_id" in rg_diag.columns else (
-                "traj_index" if "traj_index" in rg_diag.columns else None)
+            "traj_index" if "traj_index" in rg_diag.columns else None
+        )
 
         if id_col is None:
             print("[hopper->metrics] ERROR: rg_diag has no traj_id/traj_index column. Columns:",
-                list(rg_diag.columns))
+                  list(rg_diag.columns))
         else:
+            # Optional helpers for robust ID reconciliation
+            inv_track_ids = None
+            if track_ids is not None:
+                try:
+                    # map external track_id -> local index
+                    inv_track_ids = {int(v): i for i, v in enumerate(track_ids)}
+                except Exception:
+                    inv_track_ids = None
+
             for _, row in rg_diag.iterrows():
                 try:
-                    tid_raw = row[id_col]
-                    tid = int(tid_raw)
+                    tid = int(row[id_col])
                 except Exception:
                     missing += 1
                     continue
 
-                # map index -> metrics key ONLY if id_col is traj_index
-                if (track_ids is not None) and (id_col == "traj_index"):
+                # Step 1: direct match
+                if tid not in metrics_dict and track_ids is not None:
+                    # Step 2: interpret tid as local index -> metrics key
                     if 0 <= tid < len(track_ids):
-                        tid = track_ids[tid]
-                    else:
-                        missing += 1
-                        continue
+                        cand = track_ids[tid]
+                        if cand in metrics_dict:
+                            tid = cand
+                    # Step 3: interpret tid as external track_id -> local index -> metrics key
+                    if tid not in metrics_dict and inv_track_ids is not None:
+                        if tid in inv_track_ids:
+                            idx = inv_track_ids[tid]
+                            if 0 <= idx < len(track_ids):
+                                cand = track_ids[idx]
+                                if cand in metrics_dict:
+                                    tid = cand
 
-                if tid not in metrics:
+                if tid not in metrics_dict:
                     missing += 1
                     continue
 
-                metrics[tid]["is_hopper"] = int(bool(row.get("is_hopper", False)))
+                metrics_dict[tid]["is_hopper"] = int(bool(row.get("is_hopper", False)))
+
+                # optional diagnostics
+                if "RD2" in rg_diag.columns:
+                    try:
+                        metrics_dict[tid]["RD2"] = float(row.get("RD2", np.nan))
+                    except Exception:
+                        pass
+                if "chi2_cut" in rg_diag.columns:
+                    try:
+                        metrics_dict[tid]["chi2_cut"] = float(row.get("chi2_cut", np.nan))
+                    except Exception:
+                        pass
+
                 written += 1
 
         print(f"[hopper->metrics] wrote={written}, missing_metrics_keys={missing}, rg_diag_rows={len(rg_diag)}")
-        print("hopper counts in metrics:",
-            sum(v.get("is_hopper", 0) == 1 for v in metrics.values()))
-        
+        try:
+            print("hopper counts in metrics:",
+                  sum(v.get("is_hopper", 0) == 1 for v in metrics_dict.values()))
+        except Exception:
+            pass
+
     return all_data, Rg_hoppers, Rg_non_hoppers
 
 
