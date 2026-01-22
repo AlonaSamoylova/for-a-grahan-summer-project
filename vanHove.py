@@ -25,6 +25,7 @@ PIPELINE OVERVIEW (Jan 2026)
 
 NOTE:
 Hardcoded 1s cutoff below is legacy / plotting-only.
+tracks_filtered = canonical tracks
 """
 # !global storage for track comparison master function, is here - not to lost it. #JAN
 metrics = {}
@@ -2884,14 +2885,21 @@ def linearLog_pooled_log_scaled_van_hove_per_lag(
 
 
 # same as above but with log scale + added cage hopping
+#JAN
+
 def pooled_log_scaled_van_hove_per_lag(
     tracks,
-    lags_to_plot= (0.1, 0.5, 1, 10, 30, 60),  # seconds or frames (mixed allowed) #(0.1, 1.0, 30.0) (0.1, 0.15, 0.22, 0.33, 0.5, 0.75, 1, 1.5, 2.2, 3.3, 5, 10, 30) 0.1, 0.15,  1.5, 3, 5, 10, 30), 
+    lags_to_plot=(0.1, 0.5, 1, 10, 30, 60), # seconds or frames (mixed allowed) #(0.1, 1.0, 30.0) (0.1, 0.15, 0.22, 0.33, 0.5, 0.75, 1, 1.5, 2.2, 3.3, 5, 10, 30) 0.1, 0.15,  1.5, 3, 5, 10, 30), 
     bins=100,
-    range_max=10.0,
-    dt=0.025,                        # seconds per frame
-    lag_units="seconds"              # kept for backward compat; we use normalize_lags(auto)
+    range_max=10.0,  # seconds per frame
+    dt=0.025,
+    lag_units="seconds", # kept for backward compat; we use normalize_lags(auto)
+    *,
+    metrics_dict=None,      # <-- to write is_hopper
+    track_ids=None,         # <-- map local_index -> metrics_key
+    attach_hoppers=True     # <-- to turn off single/double runs
 ):
+
     """
     One-sided Van Hove with log–log axes. Displacements are scaled per lag by a
     geometric-mean factor to make curves comparable across Δt.
@@ -2899,6 +2907,7 @@ def pooled_log_scaled_van_hove_per_lag(
     Returns: (all_data, Rg_hoppers, Rg_non_hoppers)
     """
     all_data = []
+    
 
     # decide the longest usable length to clip lags safely
     max_len = max((traj.shape[0] for traj in tracks if traj is not None), default=0)
@@ -3013,40 +3022,86 @@ def pooled_log_scaled_van_hove_per_lag(
 
     #JAN 
     # master metrics
+    # # ---- attach hopper labels to metrics (bulletproof) ----
+    # missing = 0
+    # written = 0
+
+    # # !be robust to naming (traj_id vs traj_index)
+    # id_col = "traj_id" if "traj_id" in rg_diag.columns else ("traj_index" if "traj_index" in rg_diag.columns else None)
+    # if id_col is None:
+    #     print("[hopper->metrics] ERROR: rg_diag has no traj_id/traj_index column. Columns:", list(rg_diag.columns))
+    # else:
+    #     for _, row in rg_diag.iterrows():
+    #         try:
+    #             tid = int(row[id_col])
+                
+    #         except Exception:
+    #             continue
+
+    #         if tid not in metrics:
+    #             missing += 1
+    #             continue
+
+    #         # main label
+    #         metrics[tid]["is_hopper"] = int(bool(row.get("is_hopper", False)))
+
+    #         # optional: keep diagnostics for later plots/debug
+    #         if "RD2" in rg_diag.columns:
+    #             metrics[tid]["RD2"] = float(row.get("RD2", np.nan))
+    #         if "chi2_cut" in rg_diag.columns:
+    #             metrics[tid]["chi2_cut"] = float(row.get("chi2_cut", np.nan))
+
+    #         written += 1
+
+    #     print(f"[hopper->metrics] wrote={written}, missing_metrics_keys={missing}, rg_diag_rows={len(rg_diag)}")
+
+    #     print("hopper counts in metrics:", sum(v.get("is_hopper", 0) == 1 for v in metrics.values()))
+    # return all_data, Rg_hoppers, Rg_non_hoppers
+
+
     # ---- attach hopper labels to metrics (bulletproof) ----
-    missing = 0
-    written = 0
+    if attach_hoppers and (metrics_dict is not None):
+        missing = 0
+        written = 0
 
-    # !be robust to naming (traj_id vs traj_index)
-    id_col = "traj_id" if "traj_id" in rg_diag.columns else ("traj_index" if "traj_index" in rg_diag.columns else None)
-    if id_col is None:
-        print("[hopper->metrics] ERROR: rg_diag has no traj_id/traj_index column. Columns:", list(rg_diag.columns))
-    else:
-        for _, row in rg_diag.iterrows():
-            try:
-                tid = int(row[id_col])
-            except Exception:
-                continue
+        # robust to naming (traj_id vs traj_index)
+        id_col = "traj_id" if "traj_id" in rg_diag.columns else ("traj_index" if "traj_index" in rg_diag.columns else None)
+        if id_col is None:
+            print("[hopper->metrics] ERROR: rg_diag has no traj_id/traj_index column. Columns:", list(rg_diag.columns))
+        else:
+            for _, row in rg_diag.iterrows():
+                try:
+                    tid = int(row[id_col])  # tid is local index in the list passed to robust_rg_hopper_split
+                except Exception:
+                    continue
 
-            if tid not in metrics:
-                missing += 1
-                continue
+                # VARIANT A: map local index -> metrics key if track_ids provided
+                if track_ids is not None:
+                    if 0 <= tid < len(track_ids):
+                        tid = int(track_ids[tid])
+                    else:
+                        missing += 1
+                        continue
 
-            # main label
-            metrics[tid]["is_hopper"] = int(bool(row.get("is_hopper", False)))
+                if tid not in metrics_dict:
+                    missing += 1
+                    continue
 
-            # optional: keep diagnostics for later plots/debug
-            if "RD2" in rg_diag.columns:
-                metrics[tid]["RD2"] = float(row.get("RD2", np.nan))
-            if "chi2_cut" in rg_diag.columns:
-                metrics[tid]["chi2_cut"] = float(row.get("chi2_cut", np.nan))
+                metrics_dict[tid]["is_hopper"] = int(bool(row.get("is_hopper", False)))
 
-            written += 1
+                # optional diagnostics
+                if "RD2" in rg_diag.columns:
+                    metrics_dict[tid]["RD2"] = float(row.get("RD2", np.nan))
+                if "chi2_cut" in rg_diag.columns:
+                    metrics_dict[tid]["chi2_cut"] = float(row.get("chi2_cut", np.nan))
+
+                written += 1
 
         print(f"[hopper->metrics] wrote={written}, missing_metrics_keys={missing}, rg_diag_rows={len(rg_diag)}")
+        print("hopper counts in metrics:", sum(v.get("is_hopper", 0) == 1 for v in metrics_dict.values()))
+    else:
+        print("[hopper->metrics] skipped (attach_hoppers=False or metrics_dict=None)")
 
-        print("hopper counts in metrics:", sum(v.get("is_hopper", 0) == 1 for v in metrics.values()))
-    return all_data, Rg_hoppers, Rg_non_hoppers
 
 
 
@@ -4362,14 +4417,51 @@ save_van_hove_results_linear(data_double, csv_filename="Table 13: vanhove_scaled
 
 
 # log-log for the one side VanHove
-data, Rg_hoppers, Rg_non_hoppers = pooled_log_scaled_van_hove_per_lag(tracks_filtered) #vanhove data +cagging
-save_van_hove_results_abs(data, csv_filename="Table 29: log-log_1side_vanhove_scaled_fits_data.csv", fig_filename="Figure 29: vanhove_scaled_fits.png")
+# data, Rg_hoppers, Rg_non_hoppers = pooled_log_scaled_van_hove_per_lag(tracks_filtered) #vanhove data +cagging
+# save_van_hove_results_abs(data, csv_filename="Table 29: log-log_1side_vanhove_scaled_fits_data.csv", fig_filename="Figure 29: vanhove_scaled_fits.png")
 
-data_single, Rg_hoppers_single, Rg_non_hoppers_single = pooled_log_scaled_van_hove_per_lag(single_trajs)
-save_van_hove_results_abs(data_single, csv_filename="Table 30: log-log_1side_vanhove_scaled_fits_data_single.csv", fig_filename="Figure 30: vanhove_scaled_fits_single.png")
+# data_single, Rg_hoppers_single, Rg_non_hoppers_single = pooled_log_scaled_van_hove_per_lag(single_trajs)
+# save_van_hove_results_abs(data_single, csv_filename="Table 30: log-log_1side_vanhove_scaled_fits_data_single.csv", fig_filename="Figure 30: vanhove_scaled_fits_single.png")
 
-data_double, Rg_hoppers_double, Rg_non_hoppers_double = pooled_log_scaled_van_hove_per_lag(double_trajs)
-save_van_hove_results_abs(data_double, csv_filename="Table 31: log-log_1side_vanhove_scaled_fits_data_double.csv", fig_filename="Figure 31: vanhove_scaled_fits_double.png")
+# data_double, Rg_hoppers_double, Rg_non_hoppers_double = pooled_log_scaled_van_hove_per_lag(double_trajs)
+# save_van_hove_results_abs(data_double, csv_filename="Table 31: log-log_1side_vanhove_scaled_fits_data_double.csv", fig_filename="Figure 31: vanhove_scaled_fits_double.png")
+
+# JAN
+# after metrics added
+track_ids_filtered = list(range(len(tracks_filtered)))
+
+data, Rg_hoppers, Rg_non_hoppers = pooled_log_scaled_van_hove_per_lag(
+    tracks_filtered,
+    lags_to_plot=[0.1, 1, 30],
+    bins=100,
+    range_max=10.0,
+    dt=0.025,
+    metrics_dict=metrics,
+    track_ids=track_ids_filtered,
+    attach_hoppers=True
+)
+
+data_single, _, _ = pooled_log_scaled_van_hove_per_lag(
+    single_trajs,
+    lags_to_plot=[0.1, 1, 30],
+    bins=100,
+    range_max=10.0,
+    dt=0.025,
+    metrics_dict=None,
+    attach_hoppers=False
+)
+
+data_double, _, _ = pooled_log_scaled_van_hove_per_lag(
+    double_trajs,
+    lags_to_plot=[0.1, 1, 30],
+    bins=100,
+    range_max=10.0,
+    dt=0.025,
+    metrics_dict=None,
+    attach_hoppers=False
+)
+
+
 
 
 # log-linear for the two side VanHove
@@ -4427,8 +4519,9 @@ def save_rg_classified_tracks_to_csv(Rg_hoppers, Rg_non_hoppers, output_prefix="
     print(f"Saved: {output_prefix}_hoppers.csv and {output_prefix}_nonhoppers.csv")
 
 save_rg_classified_tracks_to_csv(Rg_hoppers=Rg_hoppers, Rg_non_hoppers=Rg_non_hoppers, output_prefix="overall", number=21)
-save_rg_classified_tracks_to_csv(Rg_hoppers=Rg_hoppers_single, Rg_non_hoppers=Rg_non_hoppers_single, output_prefix="single", number=23)
-save_rg_classified_tracks_to_csv(Rg_hoppers=Rg_hoppers_double, Rg_non_hoppers=Rg_non_hoppers_double, output_prefix="double", number=25)
+# JAN commented for now
+# save_rg_classified_tracks_to_csv(Rg_hoppers=Rg_hoppers_single, Rg_non_hoppers=Rg_non_hoppers_single, output_prefix="single", number=23)
+# save_rg_classified_tracks_to_csv(Rg_hoppers=Rg_hoppers_double, Rg_non_hoppers=Rg_non_hoppers_double, output_prefix="double", number=25)
 
 
 
@@ -4780,10 +4873,12 @@ def pack(range_max=10.0, seg_size=10, k=2.0, return_plot_samples=True, n_plot_ea
 
     h_samples         = pick(Rg_hoppers)
     n_samples         = pick(Rg_non_hoppers)
-    h_single_samples  = pick(Rg_hoppers_single)        # fixed: length of *_single
-    n_single_samples  = pick(Rg_non_hoppers_single)
-    h_double_samples  = pick(Rg_hoppers_double)
-    n_double_samples  = pick(Rg_non_hoppers_double)
+    # JAN 
+    # commented for now
+    # h_single_samples  = pick(Rg_hoppers_single)        # fixed: length of *_single
+    # n_single_samples  = pick(Rg_non_hoppers_single)
+    # h_double_samples  = pick(Rg_hoppers_double)
+    # n_double_samples  = pick(Rg_non_hoppers_double)
 
     # store everything needed to plot later
     plot_pack = {
@@ -4791,10 +4886,12 @@ def pack(range_max=10.0, seg_size=10, k=2.0, return_plot_samples=True, n_plot_ea
             "k": k,
             "hoppers": h_samples,        # list of arrays (N,2) or (N,>=3)
             "nonhoppers": n_samples,     # list of arrays
-            "hoppers_single": h_single_samples,        # list of arrays (N,2) or (N,>=3)
-            "nonhoppers_single": n_single_samples,     # list of arrays
-            "hoppers_double": h_double_samples,        # list of arrays (N,2) or (N,>=3)
-            "nonhoppers_double": n_double_samples,     # list of arrays
+
+            # JAN, commmented for now
+            # "hoppers_single": h_single_samples,        # list of arrays (N,2) or (N,>=3)
+            # "nonhoppers_single": n_single_samples,     # list of arrays
+            # "hoppers_double": h_double_samples,        # list of arrays (N,2) or (N,>=3)
+            # "nonhoppers_double": n_double_samples,     # list of arrays
 
         }
     
