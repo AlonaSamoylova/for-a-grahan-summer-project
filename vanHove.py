@@ -2897,7 +2897,7 @@ def pooled_log_scaled_van_hove_per_lag(
     *,
     metrics_dict=None,      # <-- to write is_hopper
     track_ids=None,         # <-- map local_index -> metrics_key
-    attach_hoppers=True     # <-- to turn off single/double runs
+    attach_hoppers=False    # <-- to turn off single/double runs
 ):
 
     """
@@ -4405,7 +4405,7 @@ data, Rg_hoppers, Rg_non_hoppers = pooled_log_scaled_van_hove_per_lag(
     dt=0.025,
     metrics_dict=metrics,
     track_ids=track_ids_called,
-    attach_hoppers=True
+    attach_hoppers=False
 )
 
 data_single, _, _ = pooled_log_scaled_van_hove_per_lag(
