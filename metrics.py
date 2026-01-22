@@ -5037,7 +5037,7 @@ else:
     print("[master_df] ERROR: msd_mag_1s missing; cannot filter/save meaningful master_df")
 
 # save full master table
-master_path = os.path.join(out_dir, "master_metrics_table.csv")
+master_path = os.path.join(out_dir, "Table 36_master_metrics.csv")
 master_df.to_csv(master_path, index=False)
 print(f"[master_df] saved: {master_path}  (rows={len(master_df)})")
 
