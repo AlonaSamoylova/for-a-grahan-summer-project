@@ -3040,14 +3040,19 @@ def pooled_log_scaled_van_hove_per_lag(
         else:
             for _, row in rg_diag.iterrows():
                 try:
-                    tid = int(row[id_col])
+                    tid_raw = row[id_col]
+                    tid = int(tid_raw)
                 except Exception:
+                    missing += 1
                     continue
 
-                # 🔑 ВАЖЛИВО: мапінг індекс → реальний track_id
-                if track_ids is not None:
+                # map index -> metrics key ONLY if id_col is traj_index
+                if (track_ids is not None) and (id_col == "traj_index"):
                     if 0 <= tid < len(track_ids):
                         tid = track_ids[tid]
+                    else:
+                        missing += 1
+                        continue
 
                 if tid not in metrics:
                     missing += 1
@@ -4390,6 +4395,8 @@ save_van_hove_results_linear(data_double, csv_filename="Table 13: vanhove_scaled
 # after metrics added
 track_ids_filtered = list(range(len(tracks_filtered)))
 
+track_ids_called = list(metrics.keys())
+
 data, Rg_hoppers, Rg_non_hoppers = pooled_log_scaled_van_hove_per_lag(
     tracks_filtered,
     lags_to_plot=[0.1, 1, 30],
@@ -4397,7 +4404,7 @@ data, Rg_hoppers, Rg_non_hoppers = pooled_log_scaled_van_hove_per_lag(
     range_max=10.0,
     dt=0.025,
     metrics_dict=metrics,
-    track_ids=track_ids_filtered,
+    track_ids=track_ids_called,
     attach_hoppers=True
 )
 
